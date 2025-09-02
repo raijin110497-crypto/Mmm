@@ -621,6 +621,20 @@
         ctx.fillStyle = '#ffcf59'; ctx.strokeStyle = '#2b1b00'; ctx.lineWidth = 2;
         roundRect(ctx, -ob.w/2, -ob.h/2, ob.w, ob.h, Math.min(ob.w, ob.h) * 0.45);
         ctx.fill(); ctx.stroke();
+        // edge spikes along the long sides
+        ctx.fillStyle = '#2b1b00';
+        const step = 16; const half = ob.w/2; const halfH = ob.h/2; const dirLong = ob.w > ob.h;
+        if (dirLong) {
+          for (let x = -half + step; x < half - step; x += step) {
+            ctx.beginPath(); ctx.moveTo(x, -halfH - 2); ctx.lineTo(x + 6, -halfH - 12); ctx.lineTo(x + 12, -halfH - 2); ctx.closePath(); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(x, halfH + 2); ctx.lineTo(x + 6, halfH + 12); ctx.lineTo(x + 12, halfH + 2); ctx.closePath(); ctx.fill();
+          }
+        } else {
+          for (let y = -halfH + step; y < halfH - step; y += step) {
+            ctx.beginPath(); ctx.moveTo(-half - 2, y); ctx.lineTo(-half - 12, y + 6); ctx.lineTo(-half - 2, y + 12); ctx.closePath(); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(half + 2, y); ctx.lineTo(half + 12, y + 6); ctx.lineTo(half + 2, y + 12); ctx.closePath(); ctx.fill();
+          }
+        }
         ctx.restore();
       } else if (ob.type === 'rotating_blade') {
         const bx = ob.pivot_x + Math.cos(ob.angle) * ob.radius;
