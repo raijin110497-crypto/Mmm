@@ -2,9 +2,722 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
   <title>Sling</title>
+  <style>
+    :root {
+      --bg: #0c0f14;
+      --panel: #121722;
+      --accent: #4cc9f0;
+      --accent-2: #90f;
+      --good: #7dd56f;
+      --warn: #ffbe0b;
+      --bad: #ff4d6d;
+      --text: #e6edf3;
+      --muted: #9fb3c8;
+      --ground: #1a2130;
+      --green: #46d39a;
+      --blue: #3fa9f5;
+      --purple: #a86eff;
+    }
+
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      background: radial-gradient(1000px 600px at 50% 100%, #0f1521, var(--bg));
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      overflow: hidden;
+    }
+
+    .game-root {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+    }
+
+    .hud {
+      pointer-events: none;
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      padding: 12px 16px;
+      background: linear-gradient(180deg, rgba(0,0,0,0.35), rgba(0,0,0,0));
+      box-shadow: inset 0 -1px 0 rgba(255,255,255,0.04);
+    }
+
+    .stat {
+      pointer-events: none;
+      background: rgba(0,0,0,0.25);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-weight: 600;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+    }
+
+    .stat strong { color: var(--text); }
+
+    .powers {
+      margin-left: auto;
+      display: flex;
+      gap: 8px;
+    }
+
+    .power-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.06);
+      color: var(--text);
+    }
+
+    .power-chip[data-type="damage"] { box-shadow: 0 0 0 2px rgba(70,211,154,0.25) inset; }
+    .power-chip[data-type="shield"] { box-shadow: 0 0 0 2px rgba(63,169,245,0.25) inset; }
+    .power-chip[data-type="multishot"] { box-shadow: 0 0 0 2px rgba(168,110,255,0.25) inset; }
+
+    .canvas-wrap {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .ground {
+      position: absolute;
+      inset-inline: 0;
+      bottom: 0;
+      height: 18px;
+      background: linear-gradient(180deg, #1a2130, #131a27);
+      box-shadow: 0 -1px 0 rgba(255,255,255,0.06) inset;
+    }
+
+    .footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 16px 14px;
+      color: var(--muted);
+      font-size: 12px;
+      background: linear-gradient(0deg, rgba(0,0,0,0.35), rgba(0,0,0,0));
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+    }
+
+    .btn {
+      pointer-events: auto;
+      appearance: none;
+      border: 0;
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-weight: 700;
+      color: var(--text);
+      background: linear-gradient(180deg, #1c2637, #111827);
+      border: 1px solid rgba(255,255,255,0.10);
+      cursor: pointer;
+    }
+
+    .overlay {
+      position: absolute;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,0.5);
+      backdrop-filter: blur(2px);
+    }
+    .overlay.show { display: flex; }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 14px;
+      padding: 18px;
+      width: min(90vw, 420px);
+      display: grid;
+      gap: 12px;
+      text-align: center;
+    }
+
+    .title { font-size: 20px; font-weight: 800; }
+    .muted { color: var(--muted); font-size: 13px; }
+
+    .legend {
+      display: grid;
+      gap: 6px;
+      margin-top: 6px;
+      text-align: left;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .kbd {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 12px;
+      padding: 2px 6px;
+      border-radius: 6px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.12);
+      color: var(--text);
+    }
+
+    @media (max-width: 640px) {
+      .hud { gap: 8px; padding: 10px; }
+      .stat { padding: 6px 8px; font-size: 12px; }
+      .footer { padding: 8px 12px 12px; }
+      .panel { width: min(92vw, 420px); }
+    }
+  </style>
 </head>
 <body>
+  <div class="game-root">
+    <div class="hud">
+      <div class="stat"><span>HP</span><strong id="hpText">100</strong></div>
+      <div class="stat"><span>DMG</span><strong id="dmgText">5</strong></div>
+      <div class="stat"><span>LEVEL</span><strong id="lvlText">1</strong></div>
+      <div class="stat"><span>ENEMIES</span><strong id="leftText">0</strong></div>
+      <div class="powers" id="powers"></div>
+    </div>
+
+    <div class="canvas-wrap">
+      <canvas id="game"></canvas>
+      <div class="ground"></div>
+
+      <div class="overlay" id="gameOver">
+        <div class="panel">
+          <div class="title">Game Over</div>
+          <div class="muted" id="summary"></div>
+          <button class="btn" id="retryBtn">Play Again</button>
+        </div>
+      </div>
+
+      <div class="overlay" id="helpOverlay">
+        <div class="panel">
+          <div class="title">Sling</div>
+          <div class="muted">Pull and release to sling stones. Pierce enemies, collect power-ups.</div>
+          <div class="legend">
+            <div>• Drag from the slingshot at the bottom center to aim and set power</div>
+            <div>• Release to fire. Stones pierce enemies</div>
+            <div>• Enemies reaching the floor damage you</div>
+            <div>• Hit falling power-ups: <span class="kbd">Dmg+</span>, <span class="kbd">Shield</span>, <span class="kbd">Multi</span></div>
+          </div>
+          <button class="btn" id="startBtn">Start</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <div>Drag to aim. Release to shoot.</div>
+      <div>
+        <button class="btn" id="toggleHelp">Help</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      const canvas = document.getElementById('game');
+      const ctx = canvas.getContext('2d');
+
+      const hpText = document.getElementById('hpText');
+      const dmgText = document.getElementById('dmgText');
+      const lvlText = document.getElementById('lvlText');
+      const leftText = document.getElementById('leftText');
+      const powersEl = document.getElementById('powers');
+
+      const helpOverlay = document.getElementById('helpOverlay');
+      const startBtn = document.getElementById('startBtn');
+      const toggleHelp = document.getElementById('toggleHelp');
+      const gameOverEl = document.getElementById('gameOver');
+      const summaryEl = document.getElementById('summary');
+      const retryBtn = document.getElementById('retryBtn');
+
+      const DPR = Math.min(2, window.devicePixelRatio || 1);
+      let vw = 0, vh = 0, groundY = 0;
+
+      function resize() {
+        vw = canvas.clientWidth;
+        vh = canvas.clientHeight;
+        canvas.width = Math.floor(vw * DPR);
+        canvas.height = Math.floor(vh * DPR);
+        ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+        groundY = vh - 18; // matches .ground height
+      }
+      window.addEventListener('resize', resize);
+      resize();
+
+      function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+      function rand(min, max) { return Math.random() * (max - min) + min; }
+      function uid() { return Math.random().toString(36).slice(2); }
+
+      class Vec2 {
+        constructor(x=0,y=0){this.x=x;this.y=y}
+        copy(){return new Vec2(this.x,this.y)}
+        add(v){this.x+=v.x;this.y+=v.y;return this}
+        sub(v){this.x-=v.x;this.y-=v.y;return this}
+        mul(s){this.x*=s;this.y*=s;return this}
+        len(){return Math.hypot(this.x,this.y)}
+        norm(){const l=this.len()||1;this.x/=l;this.y/=l;return this}
+        static from(a){return new Vec2(a.x,a.y)}
+      }
+
+      class Bullet {
+        constructor(pos, vel, damage) {
+          this.pos = Vec2.from(pos);
+          this.vel = Vec2.from(vel);
+          this.r = 5;
+          this.damage = damage;
+          this.ttl = 6; // seconds
+          this.hitStamp = new Map(); // enemyId -> lastHitTime to avoid multi-hit same frame
+        }
+        update(dt) {
+          // gravity
+          this.vel.y += 600 * dt * 0.6;
+          this.pos.add(new Vec2(this.vel.x * dt, this.vel.y * dt));
+          this.ttl -= dt;
+        }
+        draw(g) {
+          g.save();
+          g.fillStyle = '#d9d9d9';
+          g.beginPath(); g.arc(this.pos.x, this.pos.y, this.r, 0, Math.PI*2); g.fill();
+          g.restore();
+        }
+        canHit(enemyId, t) {
+          const last = this.hitStamp.get(enemyId) || -999;
+          if (t - last > 0.08) { // small cooldown so a single pass doesn't register multiple hits per frame
+            this.hitStamp.set(enemyId, t);
+            return true;
+          }
+          return false;
+        }
+        get offscreen(){return this.ttl<=0 || this.pos.y>vh+40 || this.pos.x<-40 || this.pos.x>vw+40}
+      }
+
+      class Enemy {
+        constructor(level, x) {
+          const baseHp = 20 + (level-1) * 10; // HP increases per level
+          this.id = uid();
+          this.maxHp = baseHp;
+          this.hp = baseHp;
+          this.r = 16 + Math.min(10, level*1.5);
+          this.pos = new Vec2(x, -this.r - rand(10, 140));
+          this.speed = 60 + level * 8 + rand(-10, 20);
+          this.alive = true;
+        }
+        update(dt) {
+          this.pos.y += this.speed * dt;
+          if (this.pos.y + this.r >= groundY) this.pos.y = groundY - this.r;
+        }
+        draw(g) {
+          if (!this.alive) return;
+          g.save();
+          // body
+          const grd = g.createLinearGradient(this.pos.x, this.pos.y-this.r, this.pos.x, this.pos.y+this.r);
+          grd.addColorStop(0, '#2b3350');
+          grd.addColorStop(1, '#1a2135');
+          g.fillStyle = grd;
+          g.beginPath(); g.arc(this.pos.x, this.pos.y, this.r, 0, Math.PI*2); g.fill();
+          // hp bar
+          const w = this.r*1.8, h = 5, x = this.pos.x - w/2, y = this.pos.y - this.r - 10;
+          g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(x, y, w, h);
+          const p = clamp(this.hp/this.maxHp, 0, 1);
+          g.fillStyle = p>0.5 ? '#7dd56f' : (p>0.25 ? '#ffbe0b' : '#ff4d6d');
+          g.fillRect(x, y, w*p, h);
+          g.restore();
+        }
+        takeDamage(d){ this.hp -= d; if (this.hp <= 0) { this.alive = false; } }
+      }
+
+      const POWER_TYPES = ['damage','shield','multishot'];
+      class PowerUp {
+        constructor(level, x) {
+          this.type = POWER_TYPES[Math.floor(rand(0, POWER_TYPES.length))];
+          this.r = 12;
+          this.pos = new Vec2(x, -this.r-5);
+          this.speed = 90 + Math.min(80, level*6);
+          this.active = true;
+        }
+        update(dt){ this.pos.y += this.speed*dt; if (this.pos.y - this.r > vh) this.active=false; }
+        draw(g){
+          g.save();
+          let color = '#46d39a';
+          if (this.type==='shield') color = '#3fa9f5';
+          if (this.type==='multishot') color = '#a86eff';
+          g.fillStyle = color;
+          g.beginPath(); g.arc(this.pos.x, this.pos.y, this.r, 0, Math.PI*2); g.fill();
+          // symbol
+          g.fillStyle = '#0c0f14';
+          g.font = 'bold 12px sans-serif';
+          g.textAlign = 'center'; g.textBaseline = 'middle';
+          const sym = this.type==='damage' ? '+' : (this.type==='shield' ? 'S' : 'M');
+          g.fillText(sym, this.pos.x, this.pos.y+0.5);
+          g.restore();
+        }
+      }
+
+      class Slinger {
+        constructor(){
+          this.anchor = new Vec2(vw/2, groundY - 8);
+          this.pull = null; // Vec2
+          this.maxPull = Math.min(240, Math.max(140, vw*0.25));
+          this.isPulling = false;
+        }
+        onResize(){ this.anchor = new Vec2(vw/2, groundY - 8); }
+        start(px,py){
+          const p = new Vec2(px,py);
+          if (p.sub(this.anchor.copy()).len() < 60) {
+            this.isPulling = true; this.pull = new Vec2(px,py);
+          }
+        }
+        move(px,py){ if(this.isPulling) { this.pull.x=px; this.pull.y=py; } }
+        release(){
+          if(!this.isPulling) return null;
+          const dir = this.anchor.copy().sub(this.pull); // from pull to anchor
+          const dist = clamp(dir.len(), 0, this.maxPull);
+          if (dist < 8) { this.isPulling=false; this.pull=null; return null; }
+          dir.norm();
+          const power = 8 + dist * 1.6; // velocity scaler
+          const vel = dir.mul(power);
+          this.isPulling=false; this.pull=null;
+          return vel;
+        }
+        draw(g){
+          // base
+          g.save();
+          // bands if pulling
+          if (this.isPulling && this.pull) {
+            g.strokeStyle = 'rgba(255,255,255,0.25)';
+            g.lineWidth = 3;
+            g.beginPath();
+            g.moveTo(this.anchor.x-10, this.anchor.y-6);
+            g.lineTo(this.pull.x, this.pull.y);
+            g.lineTo(this.anchor.x+10, this.anchor.y-6);
+            g.stroke();
+            // projectile preview
+            g.fillStyle = '#cfcfcf';
+            g.beginPath(); g.arc(this.pull.x, this.pull.y, 6, 0, Math.PI*2); g.fill();
+          }
+          // fork
+          g.strokeStyle = '#364155';
+          g.lineWidth = 6;
+          g.lineCap = 'round';
+          g.beginPath();
+          g.moveTo(this.anchor.x-14, this.anchor.y);
+          g.lineTo(this.anchor.x-14, this.anchor.y-36);
+          g.moveTo(this.anchor.x+14, this.anchor.y);
+          g.lineTo(this.anchor.x+14, this.anchor.y-36);
+          g.stroke();
+          // handle
+          g.lineWidth = 10;
+          g.beginPath();
+          g.moveTo(this.anchor.x, this.anchor.y);
+          g.lineTo(this.anchor.x, this.anchor.y+22);
+          g.stroke();
+          g.restore();
+        }
+      }
+
+      class Game {
+        constructor(){
+          this.reset();
+          this.bindInput();
+        }
+        reset(){
+          this.level = 1;
+          this.playerHp = 100;
+          this.baseDamage = 5;
+          this.activeDamageBonus = 0; // adds to baseDamage while active
+          this.enemies = [];
+          this.bullets = [];
+          this.powerups = [];
+          this.spawnTimer = 0;
+          this.spawnInterval = 0.9; // seconds between enemy spawns within a wave
+          this.waveSize = 10; // enemies per level
+          this.enemiesSpawnedInWave = 0;
+          this.waveActive = false;
+          this.time = 0;
+          this.msstamp = performance.now();
+          this.slinger = new Slinger();
+          this.paused = true;
+          this.gameOver = false;
+          this.effects = {
+            multishot: 0, // seconds remaining
+            shield: 0, // seconds remaining
+            damage: 0 // seconds remaining, for damage bonus
+          };
+          this.score = 0;
+          this.updateHud();
+          this.layout();
+        }
+        layout(){ this.slinger.onResize(); }
+        start(){
+          this.paused = false;
+          this.gameOver = false;
+          this.beginWave();
+          requestAnimationFrame(()=>this.loop());
+        }
+        beginWave(){
+          this.enemies = [];
+          this.powerups = [];
+          this.bullets = [];
+          this.enemiesSpawnedInWave = 0;
+          this.spawnTimer = 0.1;
+          this.waveActive = true;
+          this.updateHud();
+        }
+        nextLevel(){
+          this.level += 1;
+          this.spawnInterval = Math.max(0.55, 0.9 - this.level*0.03);
+          this.beginWave();
+        }
+        bindInput(){
+          const getPos = (e)=>{
+            if (e.touches && e.touches[0]) return {x: e.touches[0].clientX, y: e.touches[0].clientY};
+            return {x: e.clientX, y: e.clientY};
+          };
+          const down = (e)=>{ e.preventDefault(); const p = getPos(e); this.slinger.start(p.x, p.y); };
+          const move = (e)=>{ if (!this.paused) { const p = getPos(e); this.slinger.move(p.x, p.y); } };
+          const up = (e)=>{
+            const vel = this.slinger.release();
+            if (vel) this.fire(vel);
+          };
+          canvas.addEventListener('mousedown', down);
+          window.addEventListener('mousemove', move);
+          window.addEventListener('mouseup', up);
+          canvas.addEventListener('touchstart', down, {passive:false});
+          window.addEventListener('touchmove', move, {passive:false});
+          window.addEventListener('touchend', up);
+        }
+        fire(vel){
+          const damage = this.getDamage();
+          const origin = this.slinger.anchor.copy().sub(new Vec2(0, 20));
+          const spread = (a)=>{
+            const sp = 0.18; // radians
+            const speed = Math.hypot(vel.x, vel.y);
+            const angle = Math.atan2(vel.y, vel.x);
+            const a1 = angle - sp, a2 = angle + sp;
+            return [
+              new Vec2(Math.cos(a1)*speed, Math.sin(a1)*speed),
+              new Vec2(Math.cos(angle)*speed, Math.sin(angle)*speed),
+              new Vec2(Math.cos(a2)*speed, Math.sin(a2)*speed)
+            ];
+          };
+          if (this.effects.multishot > 0) {
+            for (const v of spread()) this.bullets.push(new Bullet(origin, v, damage));
+          } else {
+            this.bullets.push(new Bullet(origin, vel, damage));
+          }
+        }
+        getDamage(){ return this.baseDamage + (this.effects.damage>0 ? this.activeDamageBonus : 0); }
+        trySpawnEnemy(dt){
+          if (!this.waveActive) return;
+          if (this.enemiesSpawnedInWave >= this.waveSize) return;
+          this.spawnTimer -= dt;
+          if (this.spawnTimer <= 0) {
+            const x = clamp(rand(30, vw-30), 30, vw-30);
+            this.enemies.push(new Enemy(this.level, x));
+            this.enemiesSpawnedInWave += 1;
+            this.spawnTimer = this.spawnInterval * rand(0.7, 1.3);
+          }
+        }
+        maybeSpawnPowerUp(dt){
+          // small chance per second, increases a bit with level
+          if (Math.random() < (0.005 + this.level*0.0008) * dt) {
+            const x = clamp(rand(30, vw-30), 30, vw-30);
+            this.powerups.push(new PowerUp(this.level, x));
+          }
+        }
+        applyPowerup(pu){
+          if (pu.type === 'damage') {
+            this.activeDamageBonus += 5; // +5 damage
+            this.effects.damage = Math.max(this.effects.damage, 12); // 12s duration, refresh
+          } else if (pu.type === 'shield') {
+            this.effects.shield = Math.max(this.effects.shield, 12); // 12s invulnerability to floor touches
+          } else if (pu.type === 'multishot') {
+            this.effects.multishot = Math.max(this.effects.multishot, 12); // 12s triple shot
+          }
+          this.updateHud();
+        }
+        updateEffects(dt){
+          for (const k of Object.keys(this.effects)) {
+            if (this.effects[k] > 0) this.effects[k] = Math.max(0, this.effects[k]-dt);
+          }
+          if (this.effects.damage <= 0) this.activeDamageBonus = 0;
+        }
+        collide(){
+          const now = this.time;
+          // bullets with enemies
+          for (const b of this.bullets) {
+            for (const e of this.enemies) {
+              if (!e.alive) continue;
+              const dx = b.pos.x - e.pos.x; const dy = b.pos.y - e.pos.y;
+              const rr = (b.r + e.r) * (b.r + e.r);
+              if (dx*dx + dy*dy <= rr) {
+                if (b.canHit(e.id, now)) {
+                  e.takeDamage(b.damage);
+                  if (!e.alive) { this.score += 10 + Math.floor(e.maxHp*0.2); }
+                }
+              }
+            }
+          }
+          // bullets with powerups
+          for (const b of this.bullets) {
+            for (const p of this.powerups) {
+              if (!p.active) continue;
+              const dx = b.pos.x - p.pos.x; const dy = b.pos.y - p.pos.y;
+              const rr = (b.r + p.r) * (b.r + p.r);
+              if (dx*dx + dy*dy <= rr) {
+                p.active = false;
+                this.applyPowerup(p);
+              }
+            }
+          }
+        }
+        enemiesTouchingFloor(){
+          let count = 0;
+          for (const e of this.enemies) if (e.alive && e.pos.y + e.r >= groundY - 0.1) count++;
+          return count;
+        }
+        handleFloorDamage(){
+          const touching = this.enemies.filter(e=>e.alive && e.pos.y + e.r >= groundY - 0.1);
+          if (touching.length === 0) return;
+          const damagePerEnemy = 10;
+          const total = touching.length * damagePerEnemy;
+          if (this.effects.shield > 0) {
+            // shield absorbs completely while active
+            return;
+          }
+          this.playerHp -= total;
+          if (this.playerHp <= 0) {
+            this.playerHp = 0;
+            this.endGame();
+          }
+        }
+        endGame(){
+          this.paused = true;
+          this.gameOver = true;
+          summaryEl.textContent = `Level ${this.level} • Score ${this.score}`;
+          gameOverEl.classList.add('show');
+          this.updateHud();
+        }
+        updateHud(){
+          hpText.textContent = Math.max(0, Math.floor(this.playerHp));
+          dmgText.textContent = this.getDamage();
+          lvlText.textContent = this.level;
+          const alive = this.enemies.filter(e=>e.alive).length;
+          const remaining = this.waveActive ? Math.max(0, this.waveSize - this.enemiesSpawnedInWave + alive) : alive;
+          leftText.textContent = remaining;
+          // powers
+          powersEl.innerHTML = '';
+          if (this.effects.damage>0) {
+            const el = document.createElement('div');
+            el.className='power-chip'; el.dataset.type='damage';
+            el.textContent = `Dmg+ ${Math.ceil(this.effects.damage)}s`;
+            powersEl.appendChild(el);
+          }
+          if (this.effects.shield>0) {
+            const el = document.createElement('div');
+            el.className='power-chip'; el.dataset.type='shield';
+            el.textContent = `Shield ${Math.ceil(this.effects.shield)}s`;
+            powersEl.appendChild(el);
+          }
+          if (this.effects.multishot>0) {
+            const el = document.createElement('div');
+            el.className='power-chip'; el.dataset.type='multishot';
+            el.textContent = `Multi ${Math.ceil(this.effects.multishot)}s`;
+            powersEl.appendChild(el);
+          }
+        }
+        update(dt){
+          if (this.paused) return;
+          this.updateEffects(dt);
+          this.trySpawnEnemy(dt);
+          this.maybeSpawnPowerUp(dt);
+          for (const e of this.enemies) e.update(dt);
+          for (const p of this.powerups) p.update(dt);
+          for (const b of this.bullets) b.update(dt);
+          this.collide();
+          // remove inactive
+          this.enemies = this.enemies.filter(e=>e.alive || e.pos.y + e.r < groundY - 0.1);
+          this.powerups = this.powerups.filter(p=>p.active);
+          this.bullets = this.bullets.filter(b=>!b.offscreen);
+
+          // floor damage ticks about 4 times a second to avoid draining too fast
+          this._floorTick = (this._floorTick || 0) + dt;
+          if (this._floorTick > 0.25) { this._floorTick = 0; this.handleFloorDamage(); }
+
+          // wave complete -> next level
+          const alive = this.enemies.filter(e=>e.alive).length;
+          if (this.enemiesSpawnedInWave >= this.waveSize && alive === 0 && this.waveActive) {
+            this.waveActive = false;
+            this.nextLevel();
+          }
+
+          this.updateHud();
+        }
+        draw(g){
+          // sky background glow
+          g.clearRect(0,0,vw,vh);
+          const sky = g.createLinearGradient(0, 0, 0, vh);
+          sky.addColorStop(0, '#0f1521');
+          sky.addColorStop(1, '#0c0f14');
+          g.fillStyle = sky; g.fillRect(0,0,vw,vh);
+
+          // horizon fog
+          const fog = g.createLinearGradient(0, vh-120, 0, vh);
+          fog.addColorStop(0, 'rgba(76,201,240,0.06)');
+          fog.addColorStop(1, 'rgba(76,201,240,0)');
+          g.fillStyle = fog; g.fillRect(0, vh-140, vw, 140);
+
+          // entities
+          for (const e of this.enemies) e.draw(g);
+          for (const p of this.powerups) p.draw(g);
+          for (const b of this.bullets) b.draw(g);
+
+          // slinger on top
+          this.slinger.draw(g);
+        }
+        loop(){
+          if (this.gameOver) return;
+          const now = performance.now();
+          const dt = clamp((now - this.msstamp)/1000, 0, 0.05);
+          this.msstamp = now;
+          this.time += dt;
+          this.update(dt);
+          this.draw(ctx);
+          requestAnimationFrame(()=>this.loop());
+        }
+      }
+
+      const game = new Game();
+
+      // UI wiring
+      startBtn.addEventListener('click', ()=>{ helpOverlay.classList.remove('show'); game.reset(); game.start(); });
+      toggleHelp.addEventListener('click', ()=>{ helpOverlay.classList.toggle('show'); });
+      retryBtn.addEventListener('click', ()=>{ gameOverEl.classList.remove('show'); game.reset(); game.start(); });
+
+      // initial help
+      helpOverlay.classList.add('show');
+
+      // resize handling
+      window.addEventListener('resize', ()=>{ game.layout(); });
+    })();
+  </script>
 </body>
 </html>
