@@ -422,6 +422,10 @@
     const ctx = canvas.getContext('2d');
 
     function resize() {
+      // snapshot progress along the old path before resizing
+      const oldPath = state.path ? state.path.map(s=>({ ...s })) : [];
+      const snap = snapshotEnemyProgress(oldPath);
+
       const root = document.getElementById('root');
       const hudH = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--hud-height')) || 60;
       const palH = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--palette-height')) || 92;
@@ -434,6 +438,10 @@
       ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
       state.ui.canvasRect = canvas.getBoundingClientRect();
       layoutGrid();
+      // rebuild path pixel positions for the new size/orientation
+      buildPathPixels(Levels[state.levelIndex]);
+      // re-apply progress to enemies on the new path so they don't jump off-map
+      applyEnemyProgress(state.path, snap);
       draw();
     }
 
@@ -492,7 +500,57 @@
         const ay = offY + a.y*size + size/2;
         const bx = offX + b.x*size + size/2;
         const by = offY + b.y*size + size/2;
-        state.path.push({ax, ay, bx, by, len2: dist2(ax,ay,bx,by)});
+        const len2 = dist2(ax,ay,bx,by); const len = Math.sqrt(len2);
+        state.path.push({ax, ay, bx, by, len2, len});
+      }
+    }
+
+    // Path helpers to keep enemy positions stable across resize/orientation changes
+    function pathInfo(path){
+      const lens=[]; const cum=[]; let total=0;
+      for (let i=0;i<path.length;i++){ const s = path[i]; const len = s.len || Math.sqrt((s.bx-s.ax)*(s.bx-s.ax)+(s.by-s.ay)*(s.by-s.ay)); lens.push(len); cum.push(total); total += len; }
+      return { lens, cum, total };
+    }
+    function snapshotEnemyProgress(oldPath){
+      if (!oldPath || oldPath.length===0) return { ground: new Map(), flying: new Map(), total: 1 };
+      const info = pathInfo(oldPath);
+      const start = oldPath[0]; const end = oldPath[oldPath.length-1];
+      const dx = end.bx - start.ax; const dy = end.by - start.ay; const lineLen2 = dx*dx + dy*dy || 1;
+      const snap = { ground:new Map(), flying:new Map(), totalOld: info.total };
+      for (const e of state.enemies){
+        if (e.flying){
+          const px = isFinite(e.fx)? e.fx : e.x; const py = isFinite(e.fy)? e.fy : e.y;
+          const proj = ((px - start.ax)*dx + (py - start.ay)*dy) / lineLen2;
+          snap.flying.set(e.id, clamp(proj, 0, 1));
+        } else {
+          const si = clamp(e.seg||0, 0, oldPath.length-1); const s = oldPath[si];
+          const sdx = s.bx - s.ax; const sdy = s.by - s.ay; const sden = sdx*sdx + sdy*sdy || 1;
+          const along = ((e.x - s.ax)*sdx + (e.y - s.ay)*sdy) / sden;
+          const dist = info.cum[si] + clamp(along, 0, 1) * info.lens[si];
+          const frac = info.total>0 ? dist/info.total : 0;
+          snap.ground.set(e.id, clamp(frac, 0, 1));
+        }
+      }
+      return snap;
+    }
+    function applyEnemyProgress(newPath, snap){
+      if (!newPath || newPath.length===0 || !snap) return;
+      const info = pathInfo(newPath);
+      const start = newPath[0]; const end = newPath[newPath.length-1];
+      const dx = end.bx - start.ax; const dy = end.by - start.ay;
+      for (const e of state.enemies){
+        if (e.flying){
+          const t = snap.flying.get(e.id); if (t==null) continue;
+          const nx = start.ax + dx * t; const ny = start.ay + dy * t;
+          e.fx = nx; e.fy = ny; e.x = nx; e.y = ny; e.seg = 0; e.escaped = false; e.gone = false;
+        } else {
+          const frac = snap.ground.get(e.id); if (frac==null) continue;
+          const dist = frac * info.total; let acc = 0; let si = 0;
+          while (si < newPath.length && acc + info.lens[si] < dist) { acc += info.lens[si]; si++; }
+          si = Math.min(si, newPath.length-1); const s = newPath[si];
+          const local = clamp(info.lens[si] ? (dist - acc) / info.lens[si] : 0, 0, 1);
+          e.x = s.ax + (s.bx - s.ax) * local; e.y = s.ay + (s.by - s.ay) * local; e.seg = si; e.escaped = false; e.gone = false;
+        }
       }
     }
 
