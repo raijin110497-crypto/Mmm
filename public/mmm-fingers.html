@@ -570,17 +570,41 @@
       ctx.restore();
     }
 
-    function drawEnemy(e) {
-      ctx.save();
-      ctx.translate(e.x, e.y);
-      const grad = ctx.createRadialGradient(-e.r*0.3, -e.r*0.3, e.r*0.2, 0, 0, e.r);
-      grad.addColorStop(0, '#ff8a8a'); grad.addColorStop(1, '#d93a3a');
-      ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(0, 0, e.r, 0, Math.PI*2); ctx.fill();
-      ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(0,0,0,.3)'; ctx.stroke();
-      ctx.fillStyle = '#10131a';
-      ctx.beginPath(); ctx.arc(-e.r*0.35, -e.r*0.12, e.r*0.22, 0, Math.PI*2); ctx.fill();
-      ctx.beginPath(); ctx.arc(e.r*0.35, -e.r*0.12, e.r*0.22, 0, Math.PI*2); ctx.fill();
+    function drawEnemySquare(e) {
+      const r = e.r; const inner = r; const outer = r * 1.2;
+      ctx.save(); ctx.translate(e.x, e.y);
+      ctx.beginPath();
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2 + Math.PI/8;
+        const px = Math.cos(a) * outer; const py = Math.sin(a) * outer;
+        ctx.lineTo(px, py);
+      }
+      ctx.closePath(); ctx.fillStyle = '#ff6b7a'; ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 2; ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#e33949'; ctx.beginPath(); ctx.rect(-inner, -inner, inner*2, inner*2); ctx.fill();
+      ctx.fillStyle = '#10131a'; ctx.beginPath(); ctx.arc(-r*0.35, -r*0.1, r*0.28, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(r*0.35, -r*0.1, r*0.28, 0, Math.PI*2); ctx.fill();
       ctx.restore();
+    }
+
+    function drawEnemyBall(e) {
+      const spikes = 12; const inner = e.r * 0.65; const outer = e.r;
+      ctx.save(); ctx.translate(e.x, e.y);
+      ctx.beginPath();
+      for (let i = 0; i < spikes * 2; i++) {
+        const rad = (i % 2 === 0) ? outer : inner;
+        const a = (i / (spikes * 2)) * Math.PI * 2;
+        const px = Math.cos(a) * rad; const py = Math.sin(a) * rad;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      const grad = ctx.createRadialGradient(0,0, inner*0.2, 0,0, outer);
+      grad.addColorStop(0, '#9df78c'); grad.addColorStop(1, '#3aa63a');
+      ctx.fillStyle = grad; ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 2; ctx.fill(); ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawEnemy(e) {
+      if (e.type === 'basic_enemy') return drawEnemySquare(e);
+      return drawEnemyBall(e);
     }
 
     function drawObstacle(ob, timeSec) {
