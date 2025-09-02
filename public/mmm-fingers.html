@@ -561,13 +561,9 @@
       if (ob.type === 'spike_block') {
         ctx.save();
         ctx.translate(ob.x, ob.y);
-        const r = ob.r;
+        const w = ob.w || 36, h = ob.h || w;
         ctx.fillStyle = '#e6e6e6'; ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(-r, r);
-        ctx.lineTo(0, -r);
-        ctx.lineTo(r, r);
-        ctx.closePath(); ctx.fill(); ctx.stroke();
+        roundRect(ctx, -w/2, -h/2, w, h, 8); ctx.fill(); ctx.stroke();
         ctx.restore();
       } else if (ob.type === 'moving_wall') {
         ctx.save();
