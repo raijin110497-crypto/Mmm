@@ -192,6 +192,7 @@
       <div class="stat"><span>DMG</span><strong id="dmgText">5</strong></div>
       <div class="stat"><span>LEVEL</span><strong id="lvlText">1</strong></div>
       <div class="stat"><span>ENEMIES</span><strong id="leftText">0</strong></div>
+      <div class="stat"><span>AMMO</span><strong id="ammoText">6/6</strong></div>
       <div class="powers" id="powers"></div>
     </div>
 
@@ -239,6 +240,7 @@
       const dmgText = document.getElementById('dmgText');
       const lvlText = document.getElementById('lvlText');
       const leftText = document.getElementById('leftText');
+      const ammoText = document.getElementById('ammoText');
       const powersEl = document.getElementById('powers');
 
       const helpOverlay = document.getElementById('helpOverlay');
@@ -323,11 +325,12 @@
           this.oscPhase = rand(0, Math.PI*2);
           this.speed = 30 + level * 4 + rand(-6, 12);
           this.alive = true;
+          this.reachedGround = false;
         }
         update(dt, time) {
           this.pos.y += this.speed * dt;
           this.pos.x = clamp(this.baseX + Math.sin(time*this.oscSpeed + this.oscPhase) * this.oscAmp, this.r, vw - this.r);
-          if (this.pos.y + this.r >= groundY) this.pos.y = groundY - this.r;
+          if (this.pos.y + this.r >= groundY) { this.pos.y = groundY - this.r; this.reachedGround = true; }
         }
         draw(g) {
           if (!this.alive) return;
@@ -468,6 +471,13 @@
             damage: 0 // seconds remaining, for damage bonus
           };
           this.score = 0;
+          this.ammoMax = 6;
+          this.ammo = this.ammoMax;
+          this.reloadTime = 1.6;
+          this.reloadTimer = 0;
+          this.reloading = false;
+          this.fireCooldown = 0.22;
+          this.fireTimer = 0;
           this.updateHud();
           this.layout();
         }
@@ -486,6 +496,7 @@
           this.spawnTimer = 0.1;
           this.waveSize = this.waveBase + (this.level - 1);
           this.waveActive = true;
+          this.powerups.push(new PowerUp(this.level, clamp(rand(30, vw-30), 30, vw-30)));
           this.updateHud();
         }
         nextLevel(){
@@ -512,6 +523,10 @@
           window.addEventListener('touchend', up);
         }
         fire(vel){
+          if (this.reloading || this.fireTimer > 0 || this.ammo <= 0) { return; }
+          this.fireTimer = this.fireCooldown;
+          this.ammo -= 1;
+          if (this.ammo <= 0) { this.reloading = true; this.reloadTimer = this.reloadTime; }
           const damage = this.getDamage();
           const origin = this.slinger.anchor.copy().sub(new Vec2(0, 20));
           const spread = (a)=>{
@@ -545,7 +560,7 @@
         }
         maybeSpawnPowerUp(dt){
           // small chance per second, increases a bit with level
-          if (Math.random() < (0.005 + this.level*0.0008) * dt) {
+          if (Math.random() < (0.03 + this.level*0.006) * dt) {
             const x = clamp(rand(30, vw-30), 30, vw-30);
             this.powerups.push(new PowerUp(this.level, x));
           }
@@ -602,15 +617,15 @@
           return count;
         }
         handleFloorDamage(){
-          const touching = this.enemies.filter(e=>e.alive && e.pos.y + e.r >= groundY - 0.1);
+          const touching = this.enemies.filter(e=>e.alive && e.reachedGround);
           if (touching.length === 0) return;
-          const damagePerEnemy = 10;
-          const total = touching.length * damagePerEnemy;
+          const damagePerEnemy = 5;
           if (this.effects.shield > 0) {
-            // shield absorbs completely while active
+            for (const e of touching) e.alive = false;
             return;
           }
-          this.playerHp -= total;
+          this.playerHp -= damagePerEnemy * touching.length;
+          for (const e of touching) e.alive = false;
           if (this.playerHp <= 0) {
             this.playerHp = 0;
             this.endGame();
@@ -630,6 +645,7 @@
           const alive = this.enemies.filter(e=>e.alive).length;
           const remaining = this.waveActive ? Math.max(0, this.waveSize - this.enemiesSpawnedInWave + alive) : alive;
           leftText.textContent = remaining;
+          ammoText.textContent = this.reloading ? 'RELOAD' : `${this.ammo}/${this.ammoMax}`;
           // powers
           powersEl.innerHTML = '';
           if (this.effects.damage>0) {
@@ -654,6 +670,11 @@
         update(dt){
           if (this.paused) return;
           this.updateEffects(dt);
+          if (this.fireTimer > 0) this.fireTimer = Math.max(0, this.fireTimer - dt);
+          if (this.reloading) {
+            this.reloadTimer -= dt;
+            if (this.reloadTimer <= 0) { this.reloading = false; this.ammo = this.ammoMax; }
+          }
           this.trySpawnEnemy(dt);
           this.maybeSpawnPowerUp(dt);
           for (const e of this.enemies) e.update(dt, this.time);
@@ -665,9 +686,7 @@
           this.powerups = this.powerups.filter(p=>p.active);
           this.bullets = this.bullets.filter(b=>!b.offscreen);
 
-          // floor damage ticks about 4 times a second to avoid draining too fast
-          this._floorTick = (this._floorTick || 0) + dt;
-          if (this._floorTick > 0.25) { this._floorTick = 0; this.handleFloorDamage(); }
+          this.handleFloorDamage();
 
           // wave complete -> next level
           const alive = this.enemies.filter(e=>e.alive).length;
