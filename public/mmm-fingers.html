@@ -70,7 +70,7 @@
     </div>
   </div>
 
-  <div class="overlay" id="startOverlay" aria-hidden="false">
+  <div class="overlay" id="startOverlay" aria-hidden="true" style="display:none">
     <div class="panel">
       <div class="title">MMM Fingers</div>
       <p class="subtitle">Hold to play. Mario-like vibes. Avoid the chompers!</p>
@@ -154,7 +154,7 @@
       elapsed: 0,
       best: store.get('mmm.best', 0),
       achievements: store.get('mmm.ach', {}),
-      finger: { x: 0, y: 0, r: 18, alive: false, trailX: 0, trailY: 0 },
+      finger: { x: 0, y: 0, r: 6, alive: false, trailX: 0, trailY: 0 },
       trail: [],
       enemies: [],
       obstacles: [],
@@ -851,7 +851,7 @@
       try { if (navigator.share) await navigator.share({ text, title: 'MMM Fingers' }); else { await navigator.clipboard.writeText(text); toast('Copied to clipboard'); } } catch {}
     });
 
-    setHUD(); if (state.best > 0) toast('Best: ' + state.best.toFixed(2) + 's');
+    setHUD(); toast('Hold to play'); if (state.best > 0) toast('Best: ' + state.best.toFixed(2) + 's');
 
     function roundRect(ctx, x, y, width, height, radius) {
       radius = Math.min(radius, width/2, height/2);
