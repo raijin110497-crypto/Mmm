@@ -664,8 +664,7 @@
         entity.x += (entity.vx || 0) * dt;
       }
       if (entity.type === 'moving_wall') {
-        if (entity.axis === 'horizontal') entity.x = (entity.start_x || entity.x) + Math.sin(timeSec * (entity.speed || 1)) * (entity.range || 80);
-        else entity.y = (entity.start_y || entity.y) + Math.sin(timeSec * (entity.speed || 1)) * (entity.range || 80);
+        entity.x = (entity.start_x || entity.x) + Math.sin(timeSec * (entity.speed || 1)) * (entity.range || 80);
       } else if (entity.type === 'rotating_blade') {
         entity.angle = (entity.angle || 0) + (entity.rotation_speed || 1) * dt;
       } else if (entity.type === 'chaser_enemy') {
