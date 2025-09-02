@@ -906,8 +906,11 @@
       // enemies
       for (const e of state.enemies) e.update(dt);
       // check escaped and remove dead
-      for (const e of state.enemies) if (e.escaped && !e._escCounted) { e._escCounted=true; onLoseLife(e);} 
-      state.enemies = state.enemies.filter(e=>!e.dead && !e.remove && !e.gone);
+      for (const e of state.enemies) {
+        if (e.escaped && !e._escCounted) { e._escCounted = true; onLoseLife(e); e.gone = true; }
+        if (e.dead) e.gone = true;
+      }
+      state.enemies = state.enemies.filter(e => !e.gone);
       // towers
       for (const t of state.towers) t.update(dt);
       // projectiles
