@@ -1,0 +1,1042 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Mini Tower Defense - Offline</title>
+  <style>
+    :root {
+      --ui-bg: #1e2430;
+      --ui-panel: #242b3b;
+      --ui-accent: #6bd1ff;
+      --ui-accent-2: #ffc857;
+      --ui-danger: #ff5d6c;
+      --ui-success: #2ecc71;
+      --ui-text: #eef3ff;
+      --ui-muted: #a8b0c0;
+      --tile-road: #d6c39a;
+      --tile-grass: #b8e27e;
+      --tile-border: #2a2a2a;
+      --shadow: rgba(0,0,0,0.3);
+      --btn-size: 56px;
+      --hud-height: 60px;
+      --palette-height: 92px;
+      --font: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body { margin: 0; font-family: var(--font); background: var(--ui-bg); color: var(--ui-text); overflow: hidden; }
+    .game-root { position: relative; width: 100vw; height: 100vh; background: #0f1420; }
+    .game-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+    /* HUD */
+    .hud-bar { position: absolute; top: 0; left: 0; right: 0; height: var(--hud-height); background: linear-gradient(180deg, #2b344a, #20273a); border-bottom: 1px solid #000; display: flex; align-items: center; justify-content: space-between; padding: 0 8px; gap: 8px; box-shadow: 0 2px 6px var(--shadow); }
+    .hud-group { display: flex; align-items: center; gap: 10px; }
+    .hud-stat { background: var(--ui-panel); border: 1px solid #000; padding: 8px 10px; border-radius: 10px; display: flex; align-items: center; gap: 8px; min-width: 90px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.06); }
+    .hud-icon { width: 22px; height: 22px; display: inline-block; border-radius: 6px; background: #36405a; border: 1px solid #0a0e18; }
+    .hud-label { font-weight: 700; letter-spacing: 0.3px; }
+
+    /* Controls */
+    .control-strip { display: flex; align-items: center; gap: 8px; }
+    .icon-button { width: var(--btn-size); height: var(--btn-size); background: var(--ui-panel); border: 1px solid #000; border-radius: 12px; display: grid; place-items: center; color: var(--ui-text); cursor: pointer; box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 2px 8px rgba(0,0,0,0.25); user-select: none; }
+    .icon-button:active { transform: translateY(1px); }
+    .icon-button[data-active="true"] { outline: 2px solid var(--ui-accent); }
+
+    /* Tower palette */
+    .palette { position: absolute; left: 0; right: 0; bottom: 0; height: var(--palette-height); background: linear-gradient(0deg, #1b2231, #222a3d); border-top: 1px solid #000; display: flex; align-items: center; gap: 12px; padding: 10px; box-shadow: 0 -2px 6px var(--shadow); overflow-x: auto; }
+    .tower-card { flex: 0 0 auto; width: 110px; height: 72px; background: var(--ui-panel); border: 1px solid #000; border-radius: 12px; padding: 8px; display: grid; grid-template-columns: 56px 1fr; gap: 8px; align-items: center; color: var(--ui-text); cursor: pointer; box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 2px 8px rgba(0,0,0,0.25); }
+    .tower-card:active { transform: translateY(1px); }
+    .tower-thumb { width: 56px; height: 56px; border-radius: 10px; border: 1px solid #0a0e18; background: #35405b; display: grid; place-items: center; overflow: hidden; }
+    .tower-meta { display: grid; gap: 2px; align-self: stretch; align-content: center; }
+    .tower-name { font-weight: 700; font-size: 13px; letter-spacing: 0.2px; }
+    .tower-cost { color: var(--ui-accent-2); font-weight: 700; }
+
+    /* Tooltip/upgrade panel */
+    .floating-panel { position: absolute; background: var(--ui-panel); border: 1px solid #000; border-radius: 12px; padding: 10px; box-shadow: 0 6px 18px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.06); color: var(--ui-text); min-width: 200px; z-index: 15; }
+    .panel-title { font-weight: 800; margin: 0 0 6px; }
+    .panel-row { display: flex; align-items: center; justify-content: space-between; margin: 4px 0; gap: 8px; }
+    .upgrade-button { height: 36px; padding: 0 12px; background: #2e3850; border: 1px solid #000; border-radius: 10px; color: var(--ui-text); cursor: pointer; font-weight: 700; }
+    .upgrade-button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    /* Overlay screens */
+    .screen-overlay { position: absolute; inset: 0; background: rgba(10,12,20,0.82); display: none; align-items: center; justify-content: center; z-index: 20; }
+    .screen-overlay[data-show="true"] { display: flex; }
+    .screen-card { background: linear-gradient(180deg, #2b3550, #1f2741); border: 1px solid #000; border-radius: 18px; padding: 20px; width: min(92vw, 560px); color: var(--ui-text); box-shadow: 0 8px 28px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.06); }
+    .screen-title { font-size: 28px; font-weight: 900; margin: 0 0 10px; }
+    .screen-sub { color: var(--ui-muted); margin: 0 0 16px; }
+    .screen-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    .primary-button { height: 44px; padding: 0 16px; background: var(--ui-accent); color: #051221; border: none; border-radius: 12px; font-weight: 900; cursor: pointer; }
+    .secondary-button { height: 44px; padding: 0 16px; background: #2f3a58; color: var(--ui-text); border: 1px solid #000; border-radius: 12px; font-weight: 800; cursor: pointer; }
+
+    /* Small helpers */
+    .hidden { display: none !important; }
+    .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+    .spacer { flex: 1; }
+
+    @media (max-width: 768px) {
+      :root { --btn-size: 48px; --hud-height: 56px; --palette-height: 96px; }
+      .tower-card { width: 100px; height: 68px; }
+      .hud-stat { padding: 6px 8px; min-width: 80px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="game-root" id="root">
+    <canvas class="game-canvas" id="game"></canvas>
+
+    <div class="hud-bar" id="hud">
+      <div class="hud-group">
+        <div class="hud-stat" title="Coins"><span class="hud-icon" id="icon-coins"></span><span class="hud-label" id="coins">0</span></div>
+        <div class="hud-stat" title="Lives"><span class="hud-icon" id="icon-lives"></span><span class="hud-label" id="lives">0</span></div>
+        <div class="hud-stat" title="Wave"><span class="hud-icon" id="icon-wave"></span><span class="hud-label" id="wave">0/0</span></div>
+      </div>
+      <div class="control-strip">
+        <button class="icon-button" id="btn-speed" title="Speed">1x</button>
+        <button class="icon-button" id="btn-audio" title="Music/SFX">🔊</button>
+        <button class="icon-button" id="btn-pause" title="Pause">⏸</button>
+      </div>
+    </div>
+
+    <div class="palette" id="palette"></div>
+
+    <div class="floating-panel hidden" id="upgradePanel"></div>
+
+    <div class="screen-overlay" id="menuScreen">
+      <div class="screen-card">
+        <h2 class="screen-title">Mini Tower Defense</h2>
+        <p class="screen-sub">Clean, cartoony fantasy. Works offline. Touch-ready.</p>
+        <div class="screen-actions" id="levelButtons"></div>
+        <div class="screen-actions" style="margin-top: 8px;">
+          <button class="secondary-button" id="toggleSoundMenu">Toggle Audio</button>
+          <button class="secondary-button" id="howToPlay">How to play</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="screen-overlay" id="endScreen">
+      <div class="screen-card">
+        <h2 class="screen-title" id="endTitle">Victory!</h2>
+        <p class="screen-sub" id="endSub">You defended the realm.</p>
+        <div class="screen-actions">
+          <button class="primary-button" id="btnNext">Next Level</button>
+          <button class="secondary-button" id="btnRetry">Retry</button>
+          <button class="secondary-button" id="btnMenu">Main Menu</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  (function() {
+    'use strict';
+
+    // ===== Utilities =====
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+    const lerp = (a, b, t) => a + (b - a) * t;
+    const dist2 = (x1,y1,x2,y2) => { const dx = x2-x1, dy = y2-y1; return dx*dx + dy*dy; };
+    const now = () => performance.now();
+    const rnd = (min, max) => Math.random() * (max - min) + min;
+    const irnd = (min, max) => Math.floor(rnd(min, max+1));
+
+    const base64FromUint8 = (u8) => {
+      let bin = '';
+      for (let i = 0; i < u8.length; i++) bin += String.fromCharCode(u8[i]);
+      return btoa(bin);
+    };
+    const b64Unicode = (str) => btoa(unescape(encodeURIComponent(str)));
+
+    // ===== Audio (procedural, encoded to base64 at runtime) =====
+    const AudioSys = (() => {
+      const sampleRate = 44100;
+      let enabled = true;
+
+      const setEnabled = (flag) => { enabled = !!flag; };
+      const isEnabled = () => enabled;
+
+      function makeWavBase64(samples, sampleRate) {
+        const numSamples = samples.length;
+        const blockAlign = 2; // mono 16-bit
+        const byteRate = sampleRate * blockAlign;
+        const dataSize = numSamples * 2;
+        const buffer = new ArrayBuffer(44 + dataSize);
+        const dv = new DataView(buffer);
+        let p = 0;
+        const writeStr = (s) => { for (let i=0;i<s.length;i++) dv.setUint8(p++, s.charCodeAt(i)); };
+        const writeU32 = (v) => { dv.setUint32(p, v, true); p+=4; };
+        const writeU16 = (v) => { dv.setUint16(p, v, true); p+=2; };
+
+        writeStr('RIFF');
+        writeU32(36 + dataSize);
+        writeStr('WAVE');
+        writeStr('fmt ');
+        writeU32(16); // PCM
+        writeU16(1);  // format
+        writeU16(1);  // channels
+        writeU32(sampleRate);
+        writeU32(byteRate);
+        writeU16(blockAlign);
+        writeU16(16); // bits per sample
+        writeStr('data');
+        writeU32(dataSize);
+        for (let i=0;i<numSamples;i++) {
+          let s = samples[i];
+          s = Math.max(-1, Math.min(1, s));
+          dv.setInt16(p, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+          p+=2;
+        }
+        const u8 = new Uint8Array(buffer);
+        return 'data:audio/wav;base64,' + base64FromUint8(u8);
+      }
+
+      function synthTone(freq=440, dur=0.15, vol=0.25, type='square') {
+        const length = Math.floor(sampleRate * dur);
+        const out = new Float32Array(length);
+        for (let i=0;i<length;i++) {
+          const t = i / sampleRate;
+          let s;
+          const a = 2 * Math.PI * freq * t;
+          if (type === 'square') s = Math.sign(Math.sin(a));
+          else if (type === 'saw') s = 2 * (t * freq - Math.floor(0.5 + t * freq));
+          else s = Math.sin(a);
+          const env = Math.min(1, i / (0.02*sampleRate)) * (1 - i/length);
+          out[i] = s * vol * env;
+        }
+        return makeWavBase64(out, sampleRate);
+      }
+
+      // Simple background loop (chord arpeggio)
+      function synthMusic(seconds=16) {
+        const length = Math.floor(sampleRate * seconds);
+        const out = new Float32Array(length);
+        const notes = [261.63, 329.63, 392.00, 523.25]; // C major
+        for (let i=0;i<length;i++) {
+          const t = i / sampleRate;
+          const beat = Math.floor(t*2) % notes.length; // 120 BPM
+          const freq = notes[beat];
+          const a = 2 * Math.PI * freq * t;
+          const s = Math.sin(a) * 0.18 + Math.sin(a*2)*0.07 + Math.sin(a*3)*0.04;
+          const trem = 0.85 + 0.15*Math.sin(2*Math.PI*5*t);
+          out[i] = s * trem * 0.6;
+        }
+        return makeWavBase64(out, sampleRate);
+      }
+
+      const sounds = {
+        shoot: synthTone(660, 0.09, 0.25, 'square'),
+        boom: synthTone(120, 0.25, 0.35, 'saw'),
+        hit: synthTone(330, 0.08, 0.25, 'sine'),
+        build: synthTone(520, 0.12, 0.25, 'sine'),
+        upgrade: synthTone(880, 0.12, 0.28, 'sine'),
+        music: synthMusic(24),
+      };
+
+      function play(name, loop=false) {
+        if (!enabled) return null;
+        const url = sounds[name];
+        if (!url) return null;
+        const a = new Audio();
+        a.src = url;
+        a.loop = !!loop;
+        a.play().catch(()=>{});
+        return a;
+      }
+
+      return { play, setEnabled, isEnabled, sounds };
+    })();
+
+    // ===== Sprites (SVG -> Base64) =====
+    const Sprites = (() => {
+      const makeImg = (svg) => {
+        const img = new Image();
+        img.src = 'data:image/svg+xml;base64,' + b64Unicode(svg);
+        return img;
+      };
+
+      // Simple cartoony tiles and entities
+      const svgTile = (fill, stroke) => `<?xml version="1.0"?><svg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 64 64'>
+        <rect x='1.5' y='1.5' width='61' height='61' rx='8' ry='8' fill='${fill}' stroke='${stroke}' stroke-width='3'/>
+      </svg>`;
+
+      const svgTowerArcher = `<?xml version="1.0"?><svg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 64 64'>
+        <rect x='8' y='36' width='48' height='20' rx='8' fill='#7a5538' stroke='#2a1b12' stroke-width='4'/>
+        <circle cx='32' cy='28' r='14' fill='#d0e6ff' stroke='#0a2745' stroke-width='4'/>
+        <path d='M18 16 Q32 22 46 16' fill='none' stroke='#5a3a1e' stroke-width='5'/>
+        <line x1='24' y1='14' x2='24' y2='42' stroke='#c89b3c' stroke-width='3'/>
+      </svg>`;
+
+      const svgTowerCannon = `<?xml version="1.0"?><svg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 64 64'>
+        <rect x='8' y='38' width='48' height='18' rx='8' fill='#4b566e' stroke='#101521' stroke-width='4'/>
+        <circle cx='26' cy='30' r='10' fill='#77839b' stroke='#101521' stroke-width='4'/>
+        <rect x='30' y='24' width='22' height='12' rx='6' fill='#5d6a84' stroke='#0f1422' stroke-width='4'/>
+      </svg>`;
+
+      const svgTowerMage = `<?xml version="1.0"?><svg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 64 64'>
+        <rect x='8' y='40' width='48' height='16' rx='8' fill='#5e3b7e' stroke='#2a1740' stroke-width='4'/>
+        <path d='M18 44 L32 14 L46 44 Z' fill='#7a52a8' stroke='#2a1740' stroke-width='4'/>
+        <circle cx='32' cy='28' r='6' fill='#ffd56b' stroke='#7a520a' stroke-width='3'/>
+      </svg>`;
+
+      const svgEnemyGoblin = `<?xml version="1.0"?><svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' viewBox='0 0 48 48'>
+        <circle cx='24' cy='26' r='16' fill='#8fd17d' stroke='#2d4a2b' stroke-width='4'/>
+        <circle cx='18' cy='22' r='3' fill='#1b2b18'/>
+        <circle cx='30' cy='22' r='3' fill='#1b2b18'/>
+        <rect x='16' y='30' width='16' height='4' rx='2' fill='#2d4a2b'/>
+      </svg>`;
+
+      const svgEnemyWolf = `<?xml version="1.0"?><svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' viewBox='0 0 48 48'>
+        <ellipse cx='24' cy='26' rx='16' ry='12' fill='#b0bcd1' stroke='#2a3140' stroke-width='4'/>
+        <circle cx='18' cy='24' r='2.5' fill='#111'/>
+        <circle cx='30' cy='24' r='2.5' fill='#111'/>
+        <path d='M10 16 L16 10 L18 18' fill='none' stroke='#2a3140' stroke-width='4'/>
+      </svg>`;
+
+      const svgEnemyOrc = `<?xml version="1.0"?><svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' viewBox='0 0 48 48'>
+        <rect x='10' y='16' width='28' height='22' rx='8' fill='#7bb05f' stroke='#294020' stroke-width='4'/>
+        <circle cx='20' cy='24' r='3' fill='#10200a'/>
+        <circle cx='28' cy='24' r='3' fill='#10200a'/>
+        <rect x='18' y='30' width='12' height='5' rx='2' fill='#294020'/>
+      </svg>`;
+
+      const svgEnemyBat = `<?xml version="1.0"?><svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' viewBox='0 0 48 48'>
+        <path d='M8 28 Q24 8 40 28 Q34 22 24 22 Q14 22 8 28 Z' fill='#4b3b6a' stroke='#201232' stroke-width='4'/>
+        <circle cx='24' cy='24' r='3' fill='#ff5577'/>
+      </svg>`;
+
+      const svgProjArrow = `<?xml version="1.0"?><svg xmlns='http://www.w3.org/2000/svg' width='28' height='8' viewBox='0 0 28 8'>
+        <rect x='2' y='3' width='18' height='2' rx='1' fill='#7a5a2b'/>
+        <polygon points='20,1 27,4 20,7' fill='#c8d6e6' stroke='#0f1a26' stroke-width='1'/>
+      </svg>`;
+
+      const svgProjBall = `<?xml version="1.0"?><svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'>
+        <circle cx='6' cy='6' r='5' fill='#2a3347' stroke='#0b0f17' stroke-width='2'/>
+      </svg>`;
+
+      const svgProjOrb = `<?xml version="1.0"?><svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14'>
+        <circle cx='7' cy='7' r='6' fill='#7ad1ff' stroke='#09324e' stroke-width='2'/>
+      </svg>`;
+
+      const images = {
+        grass: makeImg(svgTile('#b6e17c', '#2c8230')),
+        road: makeImg(svgTile('#d6c39a', '#8a774a')),
+        archer: makeImg(svgTowerArcher),
+        cannon: makeImg(svgTowerCannon),
+        mage: makeImg(svgTowerMage),
+        goblin: makeImg(svgEnemyGoblin),
+        wolf: makeImg(svgEnemyWolf),
+        orc: makeImg(svgEnemyOrc),
+        bat: makeImg(svgEnemyBat),
+        arrow: makeImg(svgProjArrow),
+        ball: makeImg(svgProjBall),
+        orb: makeImg(svgProjOrb),
+      };
+
+      return { images };
+    })();
+
+    // ===== Game Data =====
+    const Levels = [
+      {
+        name: 'Green Fields',
+        grid: { w: 12, h: 8 },
+        waypoints: [ {x:-1,y:1}, {x:3,y:1}, {x:3,y:5}, {x:8,y:5}, {x:8,y:2}, {x:12,y:2} ],
+        startCoins: 120,
+        lives: 20,
+        waves: [
+          { t: 'goblin', n: 10, s: 0.7 },
+          { t: 'wolf', n: 12, s: 0.6 },
+          { t: 'goblin', n: 16, s: 0.5 },
+          { t: 'orc', n: 8, s: 0.8 },
+          { t: 'bat', n: 14, s: 0.5 },
+          { t: 'orc', n: 12, s: 0.7 },
+          { t: 'wolf', n: 18, s: 0.45 },
+          { t: 'bat', n: 22, s: 0.42 },
+          { t: 'orc', n: 18, s: 0.55 },
+          { t: 'goblin', n: 32, s: 0.35 }
+        ]
+      },
+      {
+        name: 'Canyon Switchbacks',
+        grid: { w: 12, h: 9 },
+        waypoints: [ {x:-1,y:7}, {x:2,y:7}, {x:2,y:2}, {x:5,y:2}, {x:5,y:6}, {x:9,y:6}, {x:9,y:3}, {x:12,y:3} ],
+        startCoins: 120,
+        lives: 20,
+        waves: [
+          { t: 'wolf', n: 12, s: 0.6 },
+          { t: 'goblin', n: 16, s: 0.55 },
+          { t: 'bat', n: 14, s: 0.5 },
+          { t: 'orc', n: 12, s: 0.75 },
+          { t: 'wolf', n: 18, s: 0.5 },
+          { t: 'bat', n: 24, s: 0.44 },
+          { t: 'orc', n: 18, s: 0.6 },
+          { t: 'goblin', n: 36, s: 0.35 },
+          { t: 'bat', n: 28, s: 0.42 },
+          { t: 'orc', n: 24, s: 0.55 }
+        ]
+      }
+    ];
+
+    const TowerDefs = {
+      archer: { name: 'Archer', cost: 50, dmg: 12, range: 2.6, rate: 0.9, proj: 'arrow', ground: true, air: true },
+      cannon: { name: 'Cannon', cost: 70, dmg: 24, range: 2.2, rate: 1.2, proj: 'ball', splash: 1.1, ground: true, air: false },
+      mage: { name: 'Mage', cost: 60, dmg: 10, range: 2.4, rate: 0.6, proj: 'orb', slow: 0.65, slowTime: 1.4, ground: true, air: true },
+    };
+
+    const EnemyDefs = {
+      goblin: { name: 'Goblin', hp: 28, speed: 1.3, reward: 6, flying: false, sprite: 'goblin' },
+      wolf: { name: 'Wolf', hp: 22, speed: 2.0, reward: 7, flying: false, sprite: 'wolf' },
+      orc: { name: 'Orc', hp: 80, speed: 0.9, reward: 12, flying: false, sprite: 'orc' },
+      bat: { name: 'Bat', hp: 30, speed: 1.8, reward: 7, flying: true, sprite: 'bat' },
+    };
+
+    // ===== Game State =====
+    const state = {
+      levelIndex: 0,
+      grid: { w: 12, h: 8, size: 64 },
+      path: [], // list of pixel coords along waypoints
+      buildable: [], // bool per tile
+      road: [], // bool per tile
+      towers: [],
+      enemies: [],
+      projectiles: [],
+      effects: [],
+      coins: 0,
+      lives: 20,
+      waveIndex: 0,
+      waveTimer: 0,
+      toSpawn: 0,
+      spawnType: 'goblin',
+      paused: false,
+      speed: 1,
+      hovering: { i: -1, j: -1 },
+      selectedTowerType: null,
+      selectedTowerId: null,
+      audioEnabled: true,
+      musicHandle: null,
+      ui: { canvasRect: {left:0,top:0} },
+      unlocked: 0,
+      started: false,
+    };
+
+    // ===== Canvas / Resize =====
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+
+    function resize() {
+      const root = document.getElementById('root');
+      const hudH = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--hud-height')) || 60;
+      const palH = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--palette-height')) || 92;
+      const w = root.clientWidth;
+      const h = root.clientHeight;
+      canvas.width = w * devicePixelRatio;
+      canvas.height = h * devicePixelRatio;
+      canvas.style.width = w + 'px';
+      canvas.style.height = h + 'px';
+      ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+      state.ui.canvasRect = canvas.getBoundingClientRect();
+      layoutGrid();
+      draw();
+    }
+
+    window.addEventListener('resize', resize);
+
+    function layoutGrid() {
+      const root = document.getElementById('root');
+      const hudH = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--hud-height')) || 60;
+      const palH = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--palette-height')) || 92;
+      const margin = 8;
+      const W = root.clientWidth;
+      const H = root.clientHeight;
+      const hAvail = H - hudH - palH - margin*2;
+      const wAvail = W - margin*2;
+      const grid = Levels[state.levelIndex].grid;
+      const size = Math.floor(Math.min(wAvail/grid.w, hAvail/grid.h));
+      state.grid.size = Math.max(28, Math.min(96, size));
+      state.grid.offsetX = Math.floor((W - state.grid.size*grid.w) / 2);
+      state.grid.offsetY = Math.floor(hudH + margin + (hAvail - state.grid.size*grid.h)/2);
+    }
+
+    // ===== Map build (road/buildable) =====
+    function rebuildMap(level) {
+      const { w, h } = level.grid;
+      state.road = new Array(w*h).fill(false);
+      state.buildable = new Array(w*h).fill(true);
+      // Mark road tiles along waypoints as road
+      function cell(i,j){ return j*w + i; }
+      const pts = level.waypoints.map(p => ({ x: clamp(p.x, -1, w), y: clamp(p.y, -1, h) }));
+      for (let k=1;k<pts.length;k++){
+        const a = pts[k-1], b = pts[k];
+        const xi = Math.round(a.x), yi = Math.round(a.y);
+        const xj = Math.round(b.x), yj = Math.round(b.y);
+        if (xi === xj) {
+          const y0 = Math.min(yi,yj), y1 = Math.max(yi,yj);
+          for (let y=y0;y<=y1;y++) if (xi>=0&&xi<w && y>=0&&y<h) state.road[cell(xi,y)] = true;
+        } else if (yi === yj) {
+          const x0 = Math.min(xi,xj), x1 = Math.max(xi,xj);
+          for (let x=x0;x<=x1;x++) if (x>=0&&x<w && yi>=0&&yi<h) state.road[cell(x,yi)] = true;
+        }
+      }
+      for (let i=0;i<w*h;i++) if (state.road[i]) state.buildable[i] = false;
+      buildPathPixels(level);
+    }
+
+    function buildPathPixels(level) {
+      const { w, h } = level.grid;
+      const size = state.grid.size;
+      const offX = state.grid.offsetX;
+      const offY = state.grid.offsetY;
+      state.path = [];
+      const wp = level.waypoints;
+      for (let k=1;k<wp.length;k++){
+        const a = wp[k-1], b = wp[k];
+        const ax = offX + a.x*size + size/2;
+        const ay = offY + a.y*size + size/2;
+        const bx = offX + b.x*size + size/2;
+        const by = offY + b.y*size + size/2;
+        state.path.push({ax, ay, bx, by, len2: dist2(ax,ay,bx,by)});
+      }
+    }
+
+    // ===== Entities =====
+    let nextId = 1;
+    class Enemy {
+      constructor(type, level) {
+        const def = EnemyDefs[type];
+        this.id = nextId++;
+        this.type = type;
+        this.flying = def.flying;
+        this.hp = def.hp * (1 + level*0.08);
+        this.maxHp = this.hp;
+        this.speed = def.speed * (1 + level*0.03);
+        this.reward = def.reward;
+        this.t = 0; // position along path piece index + local t
+        this.seg = 0;
+        this.x = 0; this.y = 0;
+        this.slowMul = 1; this.slowTime = 0;
+        this.dead = false; this.escaped = false;
+        this.sprite = Sprites.images[def.sprite];
+        this.radius = 14;
+        const start = state.path[0];
+        if (this.flying) {
+          this.fx = start.ax; this.fy = start.ay;
+          const end = state.path[state.path.length-1];
+          this.tx = end.bx; this.ty = end.by;
+        }
+      }
+      update(dt) {
+        if (this.dead) return;
+        if (this.slowTime > 0) { this.slowTime -= dt; if (this.slowTime <= 0) { this.slowMul = 1; } }
+        const sp = this.speed * this.slowMul * 40;
+        if (this.flying) {
+          const dx = this.tx - this.fx, dy = this.ty - this.fy;
+          const len = Math.hypot(dx,dy) || 1;
+          const vx = dx/len * sp * dt;
+          const vy = dy/len * sp * dt;
+          this.fx += vx; this.fy += vy;
+          this.x = this.fx; this.y = this.fy;
+          if (dist2(this.fx,this.fy,this.tx,this.ty) < 16*16) this.escaped = true;
+        } else {
+          let seg = state.path[this.seg];
+          if (!seg) { this.escaped = true; return; }
+          const dx = seg.bx - seg.ax; const dy = seg.by - seg.ay;
+          const len = Math.hypot(dx,dy) || 1;
+          const tx = dx/len * sp * dt; const ty = dy/len * sp * dt;
+          this.x += (isNaN(this.x) ? seg.ax : tx);
+          this.y += (isNaN(this.y) ? seg.ay : ty);
+          const along = ((this.x - seg.ax) * dx + (this.y - seg.ay) * dy) / seg.len2;
+          if (along >= 1) { this.seg++; const next = state.path[this.seg]; if (next){ this.x = next.ax; this.y = next.ay; } }
+        }
+      }
+      damage(d, slowMul, slowTime) {
+        if (this.dead) return false;
+        this.hp -= d;
+        if (slowMul && slowTime) { this.slowMul = Math.min(this.slowMul, slowMul); this.slowTime = Math.max(this.slowTime, slowTime); }
+        if (this.hp <= 0) { this.dead = true; spawnEffect('pop', this.x, this.y); return true; }
+        else { spawnEffect('hit', this.x, this.y); return false; }
+      }
+    }
+
+    class Tower {
+      constructor(i, j, kind) {
+        this.id = nextId++;
+        this.i = i; this.j = j;
+        this.kind = kind;
+        const d = TowerDefs[kind];
+        this.range = d.range; // tiles
+        this.dmg = d.dmg;
+        this.rate = d.rate; // shots per second
+        this.cool = 0;
+        this.level = 1;
+        this.air = !!d.air; this.ground = !!d.ground;
+        this.splash = d.splash || 0;
+        this.slow = d.slow || 0;
+        this.slowTime = d.slowTime || 0;
+      }
+      canTarget(e) { return (e.flying ? this.air : this.ground); }
+      center() {
+        const size = state.grid.size; const x = state.grid.offsetX + this.i*size + size/2; const y = state.grid.offsetY + this.j*size + size/2; return {x,y};
+      }
+      update(dt) {
+        this.cool -= dt;
+        if (this.cool > 0) return;
+        const { x, y } = this.center();
+        const r = this.range * state.grid.size;
+        let target = null; let bestScore = -1;
+        for (const e of state.enemies) {
+          if (e.dead || e.escaped) continue;
+          if (!this.canTarget(e)) continue;
+          if (dist2(x,y,e.x,e.y) <= r*r) {
+            // Priority: farthest along path (approx by seg index)
+            const s = (e.seg||0) + (e.flying ? 0 : 0.001 * dist2(e.x,e.y, x,y));
+            if (s > bestScore) { bestScore = s; target = e; }
+          }
+        }
+        if (target) {
+          this.shootAt(target);
+          this.cool = 1/this.rate;
+        }
+      }
+      shootAt(e) {
+        const { x, y } = this.center();
+        const d = TowerDefs[this.kind];
+        const p = new Projectile(this.kind, x, y, e, this.dmg, this.splash, this.slow, this.slowTime);
+        state.projectiles.push(p);
+        AudioSys.play('shoot');
+        spawnEffect('muzzle', x, y);
+      }
+      upgradeCost() { return Math.floor(40 * Math.pow(1.8, this.level-1)); }
+      upgrade() {
+        this.level++;
+        this.dmg = Math.round(this.dmg * 1.32);
+        this.range = +(this.range * 1.08).toFixed(2);
+        this.rate = +(this.rate * 1.12).toFixed(2);
+      }
+    }
+
+    class Projectile {
+      constructor(kind, x, y, target, dmg, splash, slow, slowTime) {
+        this.kind = kind; this.x = x; this.y = y; this.target = target; this.dmg = dmg; this.splash = splash || 0; this.slow = slow||0; this.slowTime = slowTime||0;
+        this.dead = false;
+        this.speed = kind === 'cannon' ? 220 : 360;
+      }
+      update(dt) {
+        if (this.dead || !this.target || this.target.dead || this.target.escaped) { this.dead = true; return; }
+        const dx = this.target.x - this.x; const dy = this.target.y - this.y; const len = Math.hypot(dx,dy) || 1;
+        const vx = dx/len * this.speed * dt; const vy = dy/len * this.speed * dt;
+        this.x += vx; this.y += vy;
+        if (dist2(this.x,this.y,this.target.x,this.target.y) < 16) {
+          this.hit();
+        }
+      }
+      hit() {
+        this.dead = true;
+        if (this.splash > 0) {
+          const r = this.splash * state.grid.size;
+          for (const e of state.enemies) {
+            if (e.dead || e.escaped) continue;
+            if (dist2(this.x,this.y,e.x,e.y) <= r*r) {
+              const killed = e.damage(this.dmg, this.slow, this.slowTime);
+              if (killed) onEnemyKilled(e);
+            }
+          }
+          AudioSys.play('boom');
+          spawnEffect('boom', this.x, this.y);
+        } else {
+          const e = this.target;
+          const killed = e.damage(this.dmg, this.slow, this.slowTime);
+          if (killed) onEnemyKilled(e); else AudioSys.play('hit');
+        }
+      }
+    }
+
+    function spawnEffect(kind, x, y) {
+      state.effects.push({ kind, x, y, t: 0 });
+    }
+
+    function onEnemyKilled(e) {
+      state.coins += e.reward;
+      updateHUD();
+    }
+
+    // ===== Waves =====
+    function startLevel(index) {
+      state.levelIndex = index;
+      const level = Levels[index];
+      state.coins = level.startCoins;
+      state.lives = level.lives;
+      state.waveIndex = 0;
+      state.waveTimer = 1;
+      state.toSpawn = 0;
+      state.spawnType = 'goblin';
+      state.towers = []; state.enemies = []; state.projectiles = []; state.effects = [];
+      state.selectedTowerId = null; state.selectedTowerType = null;
+      rebuildMap(level);
+      layoutGrid();
+      updateHUD();
+      closePanels();
+      state.started = true;
+      if (state.audioEnabled) { if (state.musicHandle) state.musicHandle.pause(); state.musicHandle = AudioSys.play('music', true); }
+      setMenu(false);
+    }
+
+    function nextWave() {
+      const level = Levels[state.levelIndex];
+      if (state.waveIndex >= level.waves.length) return;
+      const wv = level.waves[state.waveIndex];
+      state.spawnType = wv.t;
+      state.toSpawn = wv.n;
+      state.waveTimer = 1.2;
+      state.waveIndex++;
+      updateHUD();
+    }
+
+    function updateWaves(dt) {
+      const level = Levels[state.levelIndex];
+      if (state.waveIndex >= level.waves.length && state.enemies.length === 0 && state.toSpawn === 0) {
+        // Victory
+        onWin();
+        return;
+      }
+      if (state.toSpawn <= 0) return;
+      state.waveTimer -= dt * state.speed;
+      if (state.waveTimer <= 0) {
+        spawnEnemy(state.spawnType);
+        const wv = level.waves[state.waveIndex-1];
+        state.waveTimer = wv.s;
+        state.toSpawn--;
+      }
+    }
+
+    function spawnEnemy(type) {
+      const level = Levels[state.levelIndex];
+      const e = new Enemy(type, state.waveIndex);
+      // start position
+      if (!e.flying) {
+        const first = state.path[0];
+        e.x = first.ax; e.y = first.ay; e.seg = 0;
+      }
+      state.enemies.push(e);
+    }
+
+    // ===== Input / UI =====
+    const paletteEl = document.getElementById('palette');
+    function initPalette() {
+      paletteEl.innerHTML = '';
+      for (const key of Object.keys(TowerDefs)) {
+        const def = TowerDefs[key];
+        const card = document.createElement('button');
+        card.className = 'tower-card';
+        card.innerHTML = `
+          <div class='tower-thumb'><img alt='' width='52' height='52'></div>
+          <div class='tower-meta'>
+            <div class='tower-name'>${def.name}</div>
+            <div class='tower-cost'>${def.cost}c</div>
+          </div>
+        `;
+        const img = card.querySelector('img');
+        const sprite = key==='archer'?Sprites.images.archer:key==='cannon'?Sprites.images.cannon:Sprites.images.mage;
+        img.src = sprite.src; img.width=52; img.height=52;
+        card.addEventListener('click', () => { state.selectedTowerType = key; state.selectedTowerId = null; closePanels(); });
+        paletteEl.appendChild(card);
+      }
+    }
+
+    function uiGridPos(clientX, clientY) {
+      const rect = state.ui.canvasRect;
+      const x = clientX - rect.left; const y = clientY - rect.top;
+      const size = state.grid.size; const i = Math.floor((x - state.grid.offsetX)/size); const j = Math.floor((y - state.grid.offsetY)/size);
+      return { i, j };
+    }
+
+    function canBuild(i,j) {
+      const level = Levels[state.levelIndex];
+      if (i<0||i>=level.grid.w||j<0||j>=level.grid.h) return false;
+      const idx = j*level.grid.w + i;
+      if (!state.buildable[idx]) return false;
+      for (const t of state.towers) if (t.i===i && t.j===j) return false;
+      return true;
+    }
+
+    function getTowerAt(i,j){ return state.towers.find(t=>t.i===i && t.j===j) || null; }
+
+    function placeTower(i,j) {
+      const type = state.selectedTowerType; if (!type) return;
+      const def = TowerDefs[type];
+      if (state.coins < def.cost) { flashHUD(); return; }
+      const t = new Tower(i,j,type);
+      state.towers.push(t);
+      state.coins -= def.cost;
+      updateHUD();
+      AudioSys.play('build');
+    }
+
+    function openUpgradePanel(tower) {
+      const panel = document.getElementById('upgradePanel');
+      panel.classList.remove('hidden');
+      const { x, y } = tower.center();
+      panel.style.left = (x + 10) + 'px';
+      panel.style.top = (y - 10) + 'px';
+      panel.innerHTML = '';
+      const h = document.createElement('h4'); h.className='panel-title'; h.textContent = TowerDefs[tower.kind].name + ' Lv.' + tower.level; panel.appendChild(h);
+      const r1 = document.createElement('div'); r1.className='panel-row'; r1.innerHTML = `<span>Damage</span><b>${tower.dmg}</b>`; panel.appendChild(r1);
+      const r2 = document.createElement('div'); r2.className='panel-row'; r2.innerHTML = `<span>Range</span><b>${tower.range.toFixed(2)}</b>`; panel.appendChild(r2);
+      const r3 = document.createElement('div'); r3.className='panel-row'; r3.innerHTML = `<span>Rate</span><b>${tower.rate.toFixed(2)}/s</b>`; panel.appendChild(r3);
+      const cost = tower.upgradeCost();
+      const btn = document.createElement('button'); btn.className='upgrade-button'; btn.textContent = `Upgrade (${cost}c)`; btn.disabled = state.coins < cost;
+      btn.addEventListener('click', ()=>{
+        if (state.coins >= cost) { state.coins -= cost; tower.upgrade(); updateHUD(); openUpgradePanel(tower); AudioSys.play('upgrade'); }
+      });
+      panel.appendChild(btn);
+    }
+
+    function closePanels() { document.getElementById('upgradePanel').classList.add('hidden'); }
+
+    // Mouse/Touch
+    canvas.addEventListener('mousemove', (e)=>{
+      const {i,j} = uiGridPos(e.clientX, e.clientY); state.hovering.i=i; state.hovering.j=j; });
+    canvas.addEventListener('mouseleave', ()=>{ state.hovering.i=-1; state.hovering.j=-1; });
+
+    const clickOrTap = (clientX, clientY) => {
+      const {i,j} = uiGridPos(clientX, clientY);
+      const t = getTowerAt(i,j);
+      if (t) { state.selectedTowerId = t.id; openUpgradePanel(t); return; }
+      if (state.selectedTowerType && canBuild(i,j)) { placeTower(i,j); }
+    };
+
+    canvas.addEventListener('click', (e)=>{ clickOrTap(e.clientX, e.clientY); });
+    canvas.addEventListener('touchstart', (e)=>{ const t = e.changedTouches[0]; if (!t) return; clickOrTap(t.clientX, t.clientY); });
+
+    // HUD buttons
+    document.getElementById('btn-speed').addEventListener('click', ()=>{
+      state.speed = state.speed===1 ? 2 : state.speed===2 ? 3 : 1; document.getElementById('btn-speed').textContent = state.speed + 'x';
+    });
+    document.getElementById('btn-audio').addEventListener('click', ()=>{
+      state.audioEnabled = !state.audioEnabled; AudioSys.setEnabled(state.audioEnabled); document.getElementById('btn-audio').textContent = state.audioEnabled? '🔊':'🔇';
+      if (state.audioEnabled) { if (state.musicHandle) state.musicHandle.pause(); state.musicHandle = AudioSys.play('music', true); } else { if (state.musicHandle) state.musicHandle.pause(); }
+      saveSettings();
+    });
+    document.getElementById('btn-pause').addEventListener('click', ()=>{
+      state.paused = !state.paused; document.getElementById('btn-pause').textContent = state.paused ? '▶' : '⏸';
+    });
+
+    // Menu / End screens
+    function setMenu(show) { document.getElementById('menuScreen').setAttribute('data-show', show?'true':'false'); }
+    function setEnd(show, victory) {
+      const e = document.getElementById('endScreen'); e.setAttribute('data-show', show?'true':'false');
+      if (show) {
+        const title = document.getElementById('endTitle');
+        const sub = document.getElementById('endSub');
+        if (victory) { title.textContent='Victory!'; sub.textContent='You defended the realm.'; }
+        else { title.textContent='Defeat'; sub.textContent='Enemies breached the gate.'; }
+      }
+    }
+
+    document.getElementById('btnRetry').addEventListener('click', ()=>{ setEnd(false,false); startLevel(state.levelIndex); });
+    document.getElementById('btnNext').addEventListener('click', ()=>{
+      const idx = Math.min(Levels.length-1, state.levelIndex+1); setEnd(false,true); startLevel(idx);
+    });
+    document.getElementById('btnMenu').addEventListener('click', ()=>{ setEnd(false,false); setMenu(true); });
+
+    document.getElementById('toggleSoundMenu').addEventListener('click', ()=>{ document.getElementById('btn-audio').click(); });
+    document.getElementById('howToPlay').addEventListener('click', ()=>{
+      alert('Build towers on grass. Enemies follow the road. Earn coins by defeating enemies. Tap a tower to upgrade. Survive all waves!');
+    });
+
+    function buildMenu() {
+      const c = document.getElementById('levelButtons'); c.innerHTML = '';
+      Levels.forEach((lv, idx)=>{
+        const btn = document.createElement('button'); btn.className='primary-button'; btn.textContent = lv.name; btn.disabled = idx > state.unlocked;
+        btn.addEventListener('click', ()=> startLevel(idx));
+        c.appendChild(btn);
+      });
+      setMenu(true);
+    }
+
+    function onLoseLife(e) { state.lives = Math.max(0, state.lives - 1); updateHUD(); if (state.lives <= 0) onLose(); }
+    function onLose() { setEnd(true, false); if (state.musicHandle) state.musicHandle.pause(); }
+    function onWin() {
+      setEnd(true, true);
+      state.unlocked = Math.max(state.unlocked, state.levelIndex+1);
+      saveSettings();
+      if (state.musicHandle) state.musicHandle.pause();
+    }
+
+    function updateHUD() {
+      document.getElementById('coins').textContent = state.coins;
+      document.getElementById('lives').textContent = state.lives;
+      const level = Levels[state.levelIndex];
+      const w = Math.min(state.waveIndex+ (state.toSpawn>0?1:0), level.waves.length);
+      document.getElementById('wave').textContent = `${w}/${level.waves.length}`;
+    }
+
+    function flashHUD() {
+      const el = document.getElementById('hud');
+      el.style.boxShadow = '0 0 0 3px var(--ui-danger) inset, 0 2px 6px var(--shadow)';
+      setTimeout(()=>{ el.style.boxShadow = ''; }, 180);
+    }
+
+    function saveSettings() {
+      const data = { audio: state.audioEnabled, unlocked: state.unlocked };
+      localStorage.setItem('mtd-settings', JSON.stringify(data));
+    }
+    function loadSettings() {
+      try {
+        const data = JSON.parse(localStorage.getItem('mtd-settings')||'{}');
+        if (typeof data.audio === 'boolean') state.audioEnabled = data.audio;
+        if (typeof data.unlocked === 'number') state.unlocked = clamp(data.unlocked, 0, Levels.length-1);
+      } catch(_){}
+      document.getElementById('btn-audio').textContent = state.audioEnabled? '🔊':'🔇';
+      AudioSys.setEnabled(state.audioEnabled);
+    }
+
+    // ===== Main loop =====
+    let last = now();
+    function tick() {
+      const t = now();
+      let dt = (t - last) / 1000;
+      last = t;
+      if (!state.paused && state.started) update(dt * state.speed);
+      draw();
+      requestAnimationFrame(tick);
+    }
+
+    function update(dt) {
+      // spawn waves
+      if (state.toSpawn === 0 && state.enemies.length === 0) nextWave();
+      updateWaves(dt);
+      // enemies
+      for (const e of state.enemies) e.update(dt);
+      // check escaped and remove dead
+      for (const e of state.enemies) {
+        if (e.escaped && !e._escCounted) { e._escCounted = true; onLoseLife(e); e.gone = true; }
+        if (e.dead) e.gone = true;
+      }
+      state.enemies = state.enemies.filter(e => !e.gone);
+      // towers
+      for (const t of state.towers) t.update(dt);
+      // projectiles
+      for (const p of state.projectiles) p.update(dt);
+      state.projectiles = state.projectiles.filter(p=>!p.dead);
+      // effects
+      for (const fx of state.effects) fx.t += dt;
+      state.effects = state.effects.filter(fx=> fx.t < 0.6);
+    }
+
+    // ===== Rendering =====
+    function draw() {
+      const W = canvas.clientWidth, H = canvas.clientHeight;
+      ctx.clearRect(0,0,W,H);
+      drawGrid();
+      drawEnemies();
+      drawTowers();
+      drawProjectiles();
+      drawEffects();
+      drawHover();
+    }
+
+    function drawGrid() {
+      const level = Levels[state.levelIndex];
+      const { w, h } = level.grid; const size = state.grid.size; const offX = state.grid.offsetX; const offY = state.grid.offsetY;
+      ctx.imageSmoothingEnabled = false;
+      for (let j=0;j<h;j++) {
+        for (let i=0;i<w;i++) {
+          const idx = j*w + i; const x = offX + i*size; const y = offY + j*size;
+          const img = state.road[idx] ? Sprites.images.road : Sprites.images.grass;
+          ctx.drawImage(img, x, y, size, size);
+        }
+      }
+      // road border accent
+      ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+      for (let j=0;j<h;j++) {
+        for (let i=0;i<w;i++) {
+          const idx = j*w + i; if (state.road[idx]) { ctx.strokeRect(offX + i*size + 0.5, offY + j*size + 0.5, size-1, size-1); }
+        }
+      }
+    }
+
+    function drawEnemies() {
+      for (const e of state.enemies) {
+        const img = e.sprite; const r = 22; const s = r*2;
+        ctx.save();
+        ctx.translate(e.x, e.y);
+        ctx.drawImage(img, -s/2, -s/2, s, s);
+        // HP bar
+        const w = 26, h = 5, x = -w/2, y = -s/2 - 8;
+        ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(x-1,y-1,w+2,h+2);
+        ctx.fillStyle = '#2e421f'; ctx.fillRect(x,y,w,h);
+        ctx.fillStyle = '#6bd94d'; ctx.fillRect(x,y, w*(e.hp/e.maxHp), h);
+        ctx.restore();
+      }
+    }
+
+    function drawTowers() {
+      for (const t of state.towers) {
+        const { x, y } = t.center();
+        const img = t.kind==='archer'?Sprites.images.archer:t.kind==='cannon'?Sprites.images.cannon:Sprites.images.mage;
+        const s = state.grid.size * 0.94;
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.drawImage(img, -s/2, -s/2, s, s);
+        // range (if selected)
+        if (state.selectedTowerId === t.id) {
+          ctx.fillStyle = 'rgba(107, 209, 255, 0.08)';
+          ctx.strokeStyle = 'rgba(107, 209, 255, 0.45)';
+          ctx.beginPath(); ctx.arc(0,0, t.range*state.grid.size, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+        }
+        ctx.restore();
+      }
+    }
+
+    function drawProjectiles() {
+      for (const p of state.projectiles) {
+        let img = Sprites.images.arrow; let s = 22; let rot = 0;
+        if (p.kind==='cannon') { img = Sprites.images.ball; s = 16; }
+        if (p.kind==='mage') { img = Sprites.images.orb; s = 18; }
+        if (p.target) rot = Math.atan2(p.target.y - p.y, p.target.x - p.x);
+        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(rot);
+        ctx.drawImage(img, -s/2, -s/2, s, s);
+        ctx.restore();
+      }
+    }
+
+    function drawEffects() {
+      for (const fx of state.effects) {
+        ctx.save(); ctx.translate(fx.x, fx.y);
+        if (fx.kind==='muzzle') {
+          ctx.globalAlpha = 1 - fx.t/0.3; ctx.fillStyle = '#ffd86b'; ctx.beginPath(); ctx.arc(0,0, 8 + fx.t*30, 0, Math.PI*2); ctx.fill();
+        } else if (fx.kind==='hit') {
+          ctx.globalAlpha = 1 - fx.t/0.4; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(0,0, 5 + fx.t*18, 0, Math.PI*2); ctx.fill();
+        } else if (fx.kind==='boom') {
+          ctx.globalAlpha = 1 - fx.t/0.6; ctx.strokeStyle = '#ff7d7d'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0,0, 12 + fx.t*44, 0, Math.PI*2); ctx.stroke();
+        } else if (fx.kind==='pop') {
+          ctx.globalAlpha = 1 - fx.t/0.5; ctx.fillStyle = '#aef'; ctx.beginPath(); ctx.arc(0,0, 10 + fx.t*24, 0, Math.PI*2); ctx.fill();
+        }
+        ctx.restore();
+      }
+    }
+
+    function drawHover() {
+      const { i, j } = state.hovering; if (i<0) return;
+      const level = Levels[state.levelIndex];
+      const { w } = level.grid; const idx = j*w + i;
+      const size = state.grid.size; const x = state.grid.offsetX + i*size; const y = state.grid.offsetY + j*size;
+      if (state.selectedTowerType) {
+        ctx.globalAlpha = 0.35; ctx.fillStyle = canBuild(i,j) ? '#6bd1ff' : '#ff6b7d'; ctx.fillRect(x, y, size, size); ctx.globalAlpha=1;
+      } else {
+        ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.strokeRect(x+1.5,y+1.5,size-3,size-3);
+      }
+    }
+
+    // ===== Boot =====
+    function boot() {
+      initPalette();
+      buildMenu();
+      loadSettings();
+      resize();
+      requestAnimationFrame(tick);
+    }
+
+    boot();
+  })();
+  </script>
+</body>
+</html>
