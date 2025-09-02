@@ -361,7 +361,8 @@
     function updateEnemy(enemy, dt, timeSec, player) {
       const W = canvas.clientWidth; const H = canvas.clientHeight;
       const hs = enemy.hSpeed || enemy.speed || 1.2;
-      enemy.y += (enemy.fall_speed || 80) * dt;
+      const isRot = (enemy.pattern === 'rotational' || enemy.movement_pattern === 'rotational');
+      if (!isRot) enemy.y += (enemy.fall_speed || 80) * dt;
       if (enemy.pattern === 'linear_horizontal' || enemy.movement_pattern === 'linear_horizontal') {
         const startX = enemy.start_x != null ? enemy.start_x : enemy.x;
         enemy.x = startX + Math.sin(timeSec * hs) * (enemy.movement_range || 80);
