@@ -288,7 +288,7 @@
         }
         update(dt) {
           // gravity
-          this.vel.y += 600 * dt * 0.6;
+          this.vel.y += 0;
           this.pos.add(new Vec2(this.vel.x * dt, this.vel.y * dt));
           this.ttl -= dt;
         }
@@ -373,12 +373,12 @@
 
       class Slinger {
         constructor(){
-          this.anchor = new Vec2(vw/2, groundY - 8);
+          this.anchor = new Vec2(vw/2, groundY - 100);
           this.pull = null; // Vec2
           this.maxPull = Math.min(320, Math.max(160, vw*0.35));
           this.isPulling = false;
         }
-        onResize(){ this.anchor = new Vec2(vw/2, groundY - 8); }
+        onResize(){ this.anchor = new Vec2(vw/2, groundY - 100); }
         start(px,py){
           const p = new Vec2(px,py);
           if (p.sub(this.anchor.copy()).len() < 60) {
