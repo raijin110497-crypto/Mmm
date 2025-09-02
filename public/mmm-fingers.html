@@ -122,7 +122,8 @@
       get(key, fallback) {
         try { const v = JSON.parse(localStorage.getItem(key)); return v ?? fallback; } catch { return fallback; }
       },
-      set(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} }
+      set(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
+      }
     };
 
     const audio = {
@@ -151,11 +152,11 @@
       achievements: store.get('mmm.ach', {}),
       finger: { x: 0, y: 0, r: 18, alive: false, trailX: 0, trailY: 0 },
       trail: [],
-      hazards: [],
-      lastSpawn: 0,
-      spawnInterval: 650,
-      speed: 120,
-      scrollY: 0,
+      enemies: [],
+      obstacles: [],
+      spawnTimer: 0,
+      bgScrollY: 0,
+      bgSpeed: 120,
       lastFrame: 0,
       touchActive: false
     };
@@ -198,12 +199,11 @@
     }
 
     function resetGame() {
-      state.hazards.length = 0;
+      state.enemies.length = 0;
+      state.obstacles.length = 0;
       state.trail.length = 0;
-      state.lastSpawn = 0;
-      state.scrollY = 0;
-      state.speed = 120;
-      state.spawnInterval = 650;
+      state.spawnTimer = 0;
+      state.bgScrollY = 0;
       state.elapsed = 0;
       state.dead = false;
       state.running = false;
@@ -240,104 +240,134 @@
     }
 
     function rnd(min, max) { return Math.random() * (max - min) + min; }
+    function irnd(min, max) { return Math.floor(rnd(min, max + 1)); }
 
-    function chooseMovement(hz) {
-      const w = canvas.clientWidth; const margin = 24;
-      hz.anchorX = hz.x; hz.anchorY = hz.y; hz.born = performance.now();
-      const roll = Math.random();
-      if (hz.type === 'bar') {
-        if (roll < 0.5) {
-          hz.mv = 'swing';
-          hz.baseAngle = hz.angle || 0; hz.swingAmp = rnd(0.3, 0.8); hz.omega = rnd(0.7, 1.3); hz.phase = rnd(0, Math.PI*2);
-        } else {
-          hz.mv = 'side';
-          hz.omega = rnd(0.8, 1.5); hz.phase = rnd(0, Math.PI*2); hz.amp = Math.min(w * 0.28, rnd(40, 90));
-          hz.anchorX = Math.max(margin + hz.amp, Math.min(w - margin - hz.amp, hz.anchorX));
+    function levelFromTime(t) { return Math.max(1, Math.floor(t / 6) + 1); }
+
+    function generateEnemy(level) {
+      const W = canvas.clientWidth; const H = canvas.clientHeight;
+      const enemy = { kind: 'enemy' };
+      if (level < 3) {
+        enemy.movement_pattern = Math.random() < 0.5 ? 'linear_horizontal' : 'linear_vertical';
+      } else if (level < 6) {
+        const pool = ['linear_horizontal','linear_vertical','oscillating_sine','random'];
+        enemy.movement_pattern = pool[irnd(0, pool.length - 1)];
+      } else {
+        const pool = ['linear_horizontal','linear_vertical','oscillating_sine','rotational','tracking','random'];
+        enemy.movement_pattern = pool[irnd(0, pool.length - 1)];
+      }
+      enemy.speed = rnd(0.5 + level * 0.1, 2.0 + level * 0.2);
+      enemy.movement_range = rnd(50, 150 + level * 10);
+      enemy.x = rnd(0, W);
+      enemy.y = rnd(0, H);
+      enemy.start_x = enemy.x;
+      enemy.start_y = enemy.y;
+      enemy.r = rnd(14, 20);
+      if (enemy.movement_pattern === 'rotational') {
+        enemy.pivot_x = rnd(0, W);
+        enemy.pivot_y = rnd(0, H);
+        enemy.angle = rnd(0, Math.PI * 2);
+      }
+      if (enemy.movement_pattern === 'random') {
+        enemy.dirAngle = rnd(0, Math.PI * 2);
+        enemy.nextDirChange = performance.now() / 1000 + rnd(1.2, 2.4);
+      }
+      return enemy;
+    }
+
+    function generateObstacle(level) {
+      const W = canvas.clientWidth; const H = canvas.clientHeight;
+      const obstacle = { kind: 'obstacle' };
+      let allowed = ['spike'];
+      if (level >= 4 && level <= 6) allowed = ['spike','moving_wall'];
+      if (level >= 7) allowed = ['spike','moving_wall','rotating_blade','trap_zone'];
+      obstacle.type = allowed[irnd(0, allowed.length - 1)];
+      obstacle.x = rnd(0, W);
+      obstacle.y = rnd(0, H);
+      if (obstacle.type === 'moving_wall') {
+        obstacle.axis = Math.random() < 0.5 ? 'horizontal' : 'vertical';
+        obstacle.speed = rnd(0.5, 1.5 + level * 0.1);
+        obstacle.range = rnd(50, 150);
+        obstacle.w = obstacle.axis === 'horizontal' ? rnd(120, 200) : rnd(26, 38);
+        obstacle.h = obstacle.axis === 'vertical' ? rnd(120, 200) : rnd(26, 38);
+        obstacle.start_x = obstacle.x; obstacle.start_y = obstacle.y;
+        obstacle.r = Math.max(obstacle.w, obstacle.h) * 0.5;
+      } else if (obstacle.type === 'rotating_blade') {
+        obstacle.pivot_x = rnd(0, W);
+        obstacle.pivot_y = rnd(0, H);
+        obstacle.rotation_speed = rnd(0.5, 1.5 + level * 0.1);
+        obstacle.radius = rnd(50, 100);
+        obstacle.blade_r = 16;
+        obstacle.angle = rnd(0, Math.PI * 2);
+      } else if (obstacle.type === 'trap_zone') {
+        obstacle.active_time = rnd(1, 3);
+        obstacle.inactive_time = rnd(1, 3);
+        obstacle.cycle = obstacle.active_time + obstacle.inactive_time;
+        obstacle.w = rnd(80, 120);
+        obstacle.h = rnd(80, 120);
+        obstacle.start_t = performance.now() / 1000;
+      } else if (obstacle.type === 'spike') {
+        obstacle.r = rnd(16, 26);
+      }
+      return obstacle;
+    }
+
+    function updateEnemy(enemy, dt, timeSec, player) {
+      const W = canvas.clientWidth; const H = canvas.clientHeight;
+      if (enemy.movement_pattern === 'linear_horizontal') {
+        enemy.x = enemy.start_x + Math.sin(timeSec * enemy.speed) * enemy.movement_range;
+      } else if (enemy.movement_pattern === 'linear_vertical') {
+        enemy.y = enemy.start_y + Math.sin(timeSec * enemy.speed) * enemy.movement_range;
+      } else if (enemy.movement_pattern === 'oscillating_sine') {
+        enemy.x = enemy.start_x + Math.sin(timeSec * enemy.speed) * enemy.movement_range;
+        enemy.y = enemy.start_y + Math.cos(timeSec * enemy.speed) * enemy.movement_range;
+      } else if (enemy.movement_pattern === 'rotational') {
+        enemy.angle += enemy.speed * dt;
+        enemy.x = enemy.pivot_x + Math.cos(enemy.angle) * enemy.movement_range;
+        enemy.y = enemy.pivot_y + Math.sin(enemy.angle) * enemy.movement_range;
+      } else if (enemy.movement_pattern === 'tracking') {
+        const dx = player.x - enemy.x; const dy = player.y - enemy.y; const d = Math.hypot(dx, dy) || 1;
+        const ux = dx / d, uy = dy / d; const s = enemy.speed * 60 * dt * 0.2;
+        enemy.x += ux * s; enemy.y += uy * s;
+      } else if (enemy.movement_pattern === 'random') {
+        if (timeSec >= (enemy.nextDirChange || 0)) {
+          enemy.dirAngle = rnd(0, Math.PI * 2);
+          enemy.nextDirChange = timeSec + rnd(1.2, 2.4);
         }
-        return;
+        enemy.x += Math.cos(enemy.dirAngle) * enemy.speed * 60 * dt * 0.15;
+        enemy.y += Math.sin(enemy.dirAngle) * enemy.speed * 60 * dt * 0.15;
       }
-      if (roll < 0.33) {
-        hz.mv = 'side'; hz.omega = rnd(0.8, 1.8); hz.phase = rnd(0, Math.PI*2); hz.amp = Math.min(w * 0.3, rnd(40, 110));
-        hz.anchorX = Math.max(margin + hz.amp, Math.min(w - margin - hz.amp, hz.anchorX));
-      } else if (roll < 0.66) {
-        hz.mv = 'circle'; hz.omega = rnd(1.2, 2.2); hz.phase = rnd(0, Math.PI*2); hz.rad = rnd(18, 40);
-        hz.anchorX = Math.max(margin + hz.rad, Math.min(w - margin - hz.rad, hz.anchorX));
-      } else {
-        hz.mv = 'diag'; hz.vx = rnd(-90, 90); if (Math.abs(hz.vx) < 50) hz.vx = hz.vx < 0 ? -60 : 60;
+      if (enemy.x < enemy.r) enemy.x = enemy.r; if (enemy.x > W - enemy.r) enemy.x = W - enemy.r;
+      if (enemy.y < enemy.r) enemy.y = enemy.r; if (enemy.y > H - enemy.r) enemy.y = H - enemy.r;
+    }
+
+    function isTrapActive(ob, timeSec) {
+      if (ob.type !== 'trap_zone') return true;
+      const t = (timeSec - (ob.start_t || 0)) % (ob.cycle || 1);
+      return t < (ob.active_time || 0);
+    }
+
+    function updateObstacle(ob, dt, timeSec) {
+      if (ob.type === 'moving_wall') {
+        if (ob.axis === 'horizontal') {
+          ob.x = ob.start_x + Math.sin(timeSec * ob.speed) * ob.range;
+        } else {
+          ob.y = ob.start_y + Math.sin(timeSec * ob.speed) * ob.range;
+        }
+      } else if (ob.type === 'rotating_blade') {
+        ob.angle += ob.rotation_speed * dt;
       }
     }
 
-    function spawnHazard(t) {
-      const w = canvas.clientWidth;
-      const typeRoll = Math.random();
-      if (typeRoll < 0.45) {
-        const r = rnd(16, 28);
-        const x = 30 + Math.random() * (w - 60);
-        const y = -r - 20;
-        const speed = state.speed * rnd(0.9, 1.15);
-        const rotSpeed = rnd(-1.2, 1.2);
-        const spikes = 10 + Math.floor(Math.random() * 6);
-        const hz = { type: 'ball', x, y, r, vy: speed, angle: 0, rotSpeed, spikes };
-        chooseMovement(hz); state.hazards.push(hz);
-      } else if (typeRoll < 0.75) {
-        const r = rnd(18, 30);
-        const x = 30 + Math.random() * (w - 60);
-        const y = -r - 20;
-        const speed = state.speed * rnd(0.92, 1.18);
-        const rotSpeed = rnd(-1.1, 1.1);
-        const hz = { type: 'square', x, y, r, vy: speed, angle: 0, rotSpeed };
-        chooseMovement(hz); state.hazards.push(hz);
-      } else {
-        const len = rnd(120, 200);
-        const width = 18;
-        const x = 40 + Math.random() * (w - 80);
-        const y = -40;
-        const speed = state.speed * rnd(0.85, 1.05);
-        const rotSpeed = rnd(-1.0, 1.0);
-        const hz = { type: 'bar', x, y, len, width, vy: speed, angle: rnd(0, Math.PI), rotSpeed };
-        chooseMovement(hz); state.hazards.push(hz);
-      }
-      state.lastSpawn = t;
-      state.speed = Math.min(420, state.speed + 0.7);
-      state.spawnInterval = Math.max(260, state.spawnInterval - 2);
-    }
-
-    function updateHazard(hz, dt, now) {
-      const w = canvas.clientWidth; const margin = 18; const life = (now - (hz.born || now)) / 1000;
-      if (hz.anchorY == null) hz.anchorY = hz.y; if (hz.anchorX == null) hz.anchorX = hz.x;
-      hz.anchorY += hz.vy * (dt/1000);
-
-      if (hz.mv === 'side') {
-        const dx = (hz.amp || 0) * Math.sin((hz.omega || 1) * life + (hz.phase || 0));
-        hz.x = hz.anchorX + dx; hz.y = hz.anchorY;
-      } else if (hz.mv === 'circle') {
-        const a = (hz.omega || 1.5) * life + (hz.phase || 0);
-        hz.x = hz.anchorX + (hz.rad || 24) * Math.cos(a);
-        hz.y = hz.anchorY + (hz.rad || 24) * Math.sin(a);
-      } else if (hz.mv === 'diag') {
-        hz.y = hz.anchorY; hz.x += (hz.vx || 0) * (dt/1000);
-        if (hz.x < margin) { hz.x = margin; hz.vx = Math.abs(hz.vx || 0); }
-        if (hz.x > w - margin) { hz.x = w - margin; hz.vx = -Math.abs(hz.vx || 0); }
-      } else {
-        hz.x = hz.anchorX; hz.y = hz.anchorY;
-      }
-
-      if (hz.swingAmp != null) {
-        hz.angle = (hz.baseAngle || 0) + hz.swingAmp * Math.sin((hz.omega || 1) * life + (hz.phase || 0));
-      } else {
-        hz.angle += (hz.rotSpeed || 0) * (dt/1000);
-      }
-    }
-
-    function drawBackdrop(dt) {
+    function drawBackdrop(dtMs) {
       const w = canvas.clientWidth, h = canvas.clientHeight;
-      state.scrollY += (state.speed * 0.15) * (dt/1000);
+      state.bgScrollY += (state.bgSpeed * 0.15) * (dtMs / 1000);
 
       ctx.save();
       ctx.globalAlpha = 0.15;
       ctx.fillStyle = '#ffffff';
       const stripe = 140;
-      const off = -state.scrollY % stripe;
+      const off = -state.bgScrollY % stripe;
       for (let y = -stripe + off; y < h + stripe; y += stripe) {
         ctx.beginPath();
         ctx.moveTo(0, y);
@@ -352,7 +382,7 @@
       ctx.save();
       ctx.globalAlpha = 0.25;
       ctx.fillStyle = 'rgba(0,0,0,.2)';
-      const gap = 52; const offY = state.scrollY % gap;
+      const gap = 52; const offY = state.bgScrollY % gap;
       for (let y = -gap + offY; y < h + gap; y += gap) {
         ctx.beginPath(); ctx.arc(12, y, 5, 0, Math.PI*2); ctx.fill();
         ctx.beginPath(); ctx.arc(w - 12, y + 18, 5, 0, Math.PI*2); ctx.fill();
@@ -361,7 +391,7 @@
 
       const base = h - 40;
       ctx.save();
-      ctx.translate(0, (state.scrollY * 0.2) % h);
+      ctx.translate(0, (state.bgScrollY * 0.2) % h);
       ctx.fillStyle = '#7bd67b';
       ctx.beginPath();
       ctx.moveTo(-100, base);
@@ -374,70 +404,67 @@
       ctx.restore();
     }
 
-    function drawBall(hz) {
-      const spikes = hz.spikes; const inner = hz.r * 0.65; const outer = hz.r;
-      ctx.save(); ctx.translate(hz.x, hz.y); ctx.rotate(hz.angle || 0);
-      ctx.beginPath();
-      for (let i = 0; i < spikes * 2; i++) {
-        const rad = (i % 2 === 0) ? outer : inner;
-        const a = (i / (spikes * 2)) * Math.PI * 2;
-        const px = Math.cos(a) * rad; const py = Math.sin(a) * rad;
-        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-      }
-      ctx.closePath();
-      const grad = ctx.createRadialGradient(0,0, inner*0.2, 0,0, outer);
-      grad.addColorStop(0, '#6dfc61'); grad.addColorStop(1, '#2e9e34');
-      ctx.fillStyle = grad; ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 2; ctx.fill(); ctx.stroke();
-      ctx.beginPath(); ctx.fillStyle = '#10131a'; ctx.arc(0, 0, inner*0.35, 0, Math.PI*2); ctx.fill();
-      ctx.beginPath(); ctx.fillStyle = '#f2f5ff'; ctx.arc(inner*0.12, -inner*0.08, inner*0.14, 0, Math.PI*2); ctx.fill();
-      ctx.restore();
-    }
-
-    function drawSquare(hz) {
-      const r = hz.r; const inner = r; const outer = r * 1.2;
-      ctx.save(); ctx.translate(hz.x, hz.y); ctx.rotate(hz.angle || 0);
-      ctx.beginPath();
-      for (let i = 0; i < 8; i++) {
-        const a = (i / 8) * Math.PI * 2 + Math.PI/8;
-        const px = Math.cos(a) * outer; const py = Math.sin(a) * outer;
-        ctx.lineTo(px, py);
-      }
-      ctx.closePath(); ctx.fillStyle = '#ff6b7a'; ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 2; ctx.fill(); ctx.stroke();
-      ctx.fillStyle = '#e33949';
-      ctx.beginPath(); ctx.rect(-inner, -inner, inner*2, inner*2); ctx.fill();
+    function drawEnemy(e) {
+      ctx.save();
+      ctx.translate(e.x, e.y);
+      const grad = ctx.createRadialGradient(-e.r*0.3, -e.r*0.3, e.r*0.2, 0, 0, e.r);
+      grad.addColorStop(0, '#ff8a8a'); grad.addColorStop(1, '#d93a3a');
+      ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(0, 0, e.r, 0, Math.PI*2); ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(0,0,0,.3)'; ctx.stroke();
       ctx.fillStyle = '#10131a';
-      ctx.beginPath(); ctx.arc(-r*0.35, -r*0.1, r*0.28, 0, Math.PI*2); ctx.fill();
-      ctx.beginPath(); ctx.arc(r*0.35, -r*0.1, r*0.28, 0, Math.PI*2); ctx.fill();
-      ctx.fillStyle = '#f2f5ff';
-      ctx.beginPath(); ctx.arc(-r*0.25, -r*0.18, r*0.12, 0, Math.PI*2); ctx.fill();
-      ctx.beginPath(); ctx.arc(r*0.45, -r*0.18, r*0.12, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(-e.r*0.35, -e.r*0.12, e.r*0.22, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(e.r*0.35, -e.r*0.12, e.r*0.22, 0, Math.PI*2); ctx.fill();
       ctx.restore();
     }
 
-    function drawBar(hz) {
-      const half = hz.len / 2; const w = hz.width;
-      ctx.save(); ctx.translate(hz.x, hz.y); ctx.rotate(hz.angle || 0);
-      const grd = ctx.createLinearGradient(-half, 0, half, 0);
-      grd.addColorStop(0, '#ffcf59'); grd.addColorStop(1, '#ff8e2a');
-      ctx.fillStyle = grd; ctx.strokeStyle = '#2b1b00'; ctx.lineWidth = 2;
-      const radius = w * 0.9;
-      roundRect(ctx, -half, -w/2, hz.len, w, radius); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = '#2b1b00';
-      const step = 18;
-      for (let x = -half + step; x < half - step; x += step) {
-        ctx.beginPath(); ctx.moveTo(x, -w/2 - 2); ctx.lineTo(x + 6, -w/2 - 12); ctx.lineTo(x + 12, -w/2 - 2); ctx.closePath(); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(x, w/2 + 2); ctx.lineTo(x + 6, w/2 + 12); ctx.lineTo(x + 12, w/2 + 2); ctx.closePath(); ctx.fill();
+    function drawObstacle(ob, timeSec) {
+      if (ob.type === 'spike') {
+        ctx.save();
+        ctx.translate(ob.x, ob.y);
+        const r = ob.r;
+        ctx.fillStyle = '#e6e6e6'; ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(-r, r);
+        ctx.lineTo(0, -r);
+        ctx.lineTo(r, r);
+        ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.restore();
+      } else if (ob.type === 'moving_wall') {
+        ctx.save();
+        ctx.translate(ob.x, ob.y);
+        ctx.fillStyle = '#ffcf59'; ctx.strokeStyle = '#2b1b00'; ctx.lineWidth = 2;
+        roundRect(ctx, -ob.w/2, -ob.h/2, ob.w, ob.h, Math.min(ob.w, ob.h) * 0.45);
+        ctx.fill(); ctx.stroke();
+        ctx.restore();
+      } else if (ob.type === 'rotating_blade') {
+        const bx = ob.pivot_x + Math.cos(ob.angle) * ob.radius;
+        const by = ob.pivot_y + Math.sin(ob.angle) * ob.radius;
+        ctx.save();
+        ctx.translate(ob.pivot_x, ob.pivot_y);
+        ctx.strokeStyle = 'rgba(0,0,0,.25)'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(bx - ob.pivot_x, by - ob.pivot_y); ctx.stroke();
+        ctx.restore();
+        ctx.save();
+        ctx.translate(bx, by);
+        ctx.rotate(ob.angle * 3);
+        ctx.fillStyle = '#c4c9d4'; ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 2;
+        for (let i = 0; i < 4; i++) {
+          ctx.rotate(Math.PI / 2);
+          ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(ob.blade_r*1.2, -4); ctx.lineTo(ob.blade_r*1.2, 4); ctx.closePath(); ctx.fill(); ctx.stroke();
+        }
+        ctx.beginPath(); ctx.fillStyle = '#9aa3b2'; ctx.arc(0, 0, 6, 0, Math.PI*2); ctx.fill();
+        ctx.restore();
+      } else if (ob.type === 'trap_zone') {
+        const active = isTrapActive(ob, timeSec);
+        ctx.save();
+        ctx.translate(ob.x, ob.y);
+        ctx.fillStyle = active ? 'rgba(255,77,79,0.65)' : 'rgba(0,0,0,0.12)';
+        ctx.strokeStyle = active ? 'rgba(255,77,79,1)' : 'rgba(0,0,0,0.25)';
+        ctx.lineWidth = 2;
+        roundRect(ctx, -ob.w/2, -ob.h/2, ob.w, ob.h, 12);
+        ctx.fill(); ctx.stroke();
+        ctx.restore();
       }
-      ctx.fillStyle = '#ffb13b'; ctx.strokeStyle = '#2b1b00';
-      ctx.beginPath(); ctx.arc(-half, 0, w*0.95, 0, Math.PI*2); ctx.fill(); ctx.stroke();
-      ctx.beginPath(); ctx.arc(half, 0, w*0.95, 0, Math.PI*2); ctx.fill(); ctx.stroke();
-      ctx.restore();
-    }
-
-    function drawHazard(hz) {
-      if (hz.type === 'ball') drawBall(hz);
-      else if (hz.type === 'square') drawSquare(hz);
-      else drawBar(hz);
     }
 
     function drawFinger(dt) {
@@ -469,26 +496,62 @@
       ctx.shadowBlur = 0; ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(0,0,0,.25)'; ctx.stroke();
     }
 
-    function collideFingerBall(f, hz) {
-      const dx = (f.trailX ?? f.x) - hz.x; const dy = (f.trailY ?? f.y) - hz.y; const r = f.r + hz.r * 0.9; return dx*dx + dy*dy <= r*r;
+    function collideCircleCircle(ax, ay, ar, bx, by, br) {
+      const dx = ax - bx, dy = ay - by; const r = ar + br; return dx*dx + dy*dy <= r*r;
     }
 
-    function distPointToSegment(px, py, x1, y1, x2, y2) {
-      const vx = x2 - x1, vy = y2 - y1; const wx = px - x1, wy = py - y1;
-      const c1 = vx*wx + vy*wy; if (c1 <= 0) return Math.hypot(px - x1, py - y1);
-      const c2 = vx*vx + vy*vy; if (c2 <= c1) return Math.hypot(px - x2, py - y2);
-      const b = c1 / c2; const bx = x1 + b * vx, by = y1 + b * vy; return Math.hypot(px - bx, py - by);
+    function collideCircleRect(cx, cy, cr, rx, ry, rw, rh) {
+      const hx = rw / 2, hy = rh / 2; const nx = Math.max(rx - hx, Math.min(cx, rx + hx)); const ny = Math.max(ry - hy, Math.min(cy, ry + hy));
+      const dx = cx - nx, dy = cy - ny; return dx*dx + dy*dy <= cr*cr;
     }
 
-    function collideFingerBar(f, hz) {
-      const cx = hz.x, cy = hz.y; const half = hz.len/2; const w = hz.width;
-      const s = Math.sin(hz.angle), c = Math.cos(hz.angle);
-      const x1 = cx - half * c, y1 = cy - half * s; const x2 = cx + half * c, y2 = cy + half * s;
-      const d = distPointToSegment(f.trailX ?? f.x, f.trailY ?? f.y, x1, y1, x2, y2);
-      if (d <= w/2 + f.r * 0.6) return true;
-      const d1 = Math.hypot((f.trailX ?? f.x) - x1, (f.trailY ?? f.y) - y1);
-      const d2 = Math.hypot((f.trailX ?? f.x) - x2, (f.trailY ?? f.y) - y2);
-      return d1 <= f.r + w*0.95 || d2 <= f.r + w*0.95;
+    function updateGame(dtMs, timeSec) {
+      const dt = dtMs / 1000;
+      const level = levelFromTime(state.elapsed);
+      const enemy_spawn_interval = Math.max(1.0, 3.0 - level * 0.1);
+      const obstacle_spawn_interval = Math.max(2.0, 5.0 - level * 0.2);
+      const max_enemies = 3 + level;
+      const max_obstacles = 2 + Math.floor(level / 2);
+
+      state.spawnTimer += dt;
+      if (state.spawnTimer >= enemy_spawn_interval && state.enemies.length < max_enemies) {
+        state.enemies.push(generateEnemy(level));
+        state.spawnTimer = 0;
+      }
+      if ((timeSec % obstacle_spawn_interval) < dt && state.obstacles.length < max_obstacles) {
+        state.obstacles.push(generateObstacle(level));
+      }
+
+      const player = { x: state.finger.trailX || state.finger.x, y: state.finger.trailY || state.finger.y };
+
+      for (let i = state.enemies.length - 1; i >= 0; i--) {
+        const e = state.enemies[i];
+        updateEnemy(e, dt, timeSec, player);
+        if (state.running) {
+          if (collideCircleCircle(player.x, player.y, state.finger.r * 0.9, e.x, e.y, e.r)) {
+            endRun('hit'); break;
+          }
+        }
+      }
+
+      for (let i = state.obstacles.length - 1; i >= 0; i--) {
+        const ob = state.obstacles[i];
+        updateObstacle(ob, dt, timeSec);
+        if (!state.running) continue;
+        const active = ob.type === 'trap_zone' ? isTrapActive(ob, timeSec) : true;
+        if (!active) continue;
+        if (ob.type === 'moving_wall') {
+          if (collideCircleRect(player.x, player.y, state.finger.r * 0.9, ob.x, ob.y, ob.w, ob.h)) { endRun('hit'); break; }
+        } else if (ob.type === 'rotating_blade') {
+          const bx = ob.pivot_x + Math.cos(ob.angle) * ob.radius;
+          const by = ob.pivot_y + Math.sin(ob.angle) * ob.radius;
+          if (collideCircleCircle(player.x, player.y, state.finger.r * 0.9, bx, by, ob.blade_r)) { endRun('hit'); break; }
+        } else if (ob.type === 'trap_zone') {
+          if (collideCircleRect(player.x, player.y, state.finger.r * 0.9, ob.x, ob.y, ob.w, ob.h)) { endRun('hit'); break; }
+        } else if (ob.type === 'spike') {
+          if (collideCircleCircle(player.x, player.y, state.finger.r * 0.9, ob.x, ob.y, ob.r)) { endRun('hit'); break; }
+        }
+      }
     }
 
     function step(t) {
@@ -496,30 +559,13 @@
       ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
       drawBackdrop(dt);
 
-      if (state.running && now - state.lastSpawn > state.spawnInterval) spawnHazard(now);
-
-      for (let i = state.hazards.length - 1; i >= 0; i--) {
-        const h = state.hazards[i];
-        updateHazard(h, dt, now);
-        drawHazard(h);
-        const off = 60 + (h.r || h.width);
-        const baseY = h.anchorY != null ? h.anchorY : h.y;
-        if (baseY - off > canvas.clientHeight) state.hazards.splice(i,1);
-      }
+      for (let i = 0; i < state.enemies.length; i++) drawEnemy(state.enemies[i]);
+      for (let i = 0; i < state.obstacles.length; i++) drawObstacle(state.obstacles[i], now / 1000);
 
       if (state.finger.alive) drawFinger(dt);
 
       if (state.running) {
-        for (let i = 0; i < state.hazards.length; i++) {
-          const h = state.hazards[i];
-          let hit = false;
-          if (h.type === 'bar') hit = collideFingerBar(state.finger, h);
-          else hit = collideFingerBall(state.finger, h);
-          if (hit) { endRun('hit'); break; }
-        }
-      }
-
-      if (state.running) {
+        updateGame(dt, now / 1000);
         state.elapsed = (now - state.startTime) / 1000; setHUD();
         ctx.save(); ctx.font = '900 40px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif'; ctx.textAlign = 'center'; ctx.lineWidth = 6; ctx.lineJoin = 'round';
         ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.strokeText(Math.floor(state.elapsed * 100).toString(), canvas.clientWidth/2, 60);
