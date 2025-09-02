@@ -529,6 +529,18 @@
       }
       ctx.restore();
 
+      // dotted background columns
+      ctx.save();
+      ctx.globalAlpha = 0.18;
+      ctx.fillStyle = 'rgba(0,0,0,.18)';
+      const colGap = 60; const rowGap = 48; const yOff = (state.bgScrollY * 0.6) % rowGap;
+      for (let x = colGap; x < w - colGap; x += colGap) {
+        for (let y = -rowGap + yOff; y < h + rowGap; y += rowGap) {
+          ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI*2); ctx.fill();
+        }
+      }
+      ctx.restore();
+
       const base = h - 40;
       ctx.save();
       ctx.translate(0, (state.bgScrollY * 0.2) % h);
