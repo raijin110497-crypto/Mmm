@@ -317,11 +317,16 @@
           this.hp = baseHp;
           this.r = 16 + Math.min(10, level*1.5);
           this.pos = new Vec2(x, -this.r - rand(10, 140));
-          this.speed = 60 + level * 8 + rand(-10, 20);
+          this.baseX = x;
+          this.oscAmp = clamp(20 + level*2, 20, Math.min(120, vw*0.25));
+          this.oscSpeed = rand(0.8, 1.6);
+          this.oscPhase = rand(0, Math.PI*2);
+          this.speed = 30 + level * 4 + rand(-6, 12);
           this.alive = true;
         }
-        update(dt) {
+        update(dt, time) {
           this.pos.y += this.speed * dt;
+          this.pos.x = clamp(this.baseX + Math.sin(time*this.oscSpeed + this.oscPhase) * this.oscAmp, this.r, vw - this.r);
           if (this.pos.y + this.r >= groundY) this.pos.y = groundY - this.r;
         }
         draw(g) {
@@ -448,7 +453,8 @@
           this.powerups = [];
           this.spawnTimer = 0;
           this.spawnInterval = 0.9; // seconds between enemy spawns within a wave
-          this.waveSize = 10; // enemies per level
+          this.waveBase = 5; // base enemies at level 1
+          this.waveSize = this.waveBase;
           this.enemiesSpawnedInWave = 0;
           this.waveActive = false;
           this.time = 0;
@@ -478,6 +484,7 @@
           this.bullets = [];
           this.enemiesSpawnedInWave = 0;
           this.spawnTimer = 0.1;
+          this.waveSize = this.waveBase + (this.level - 1);
           this.waveActive = true;
           this.updateHud();
         }
@@ -649,7 +656,7 @@
           this.updateEffects(dt);
           this.trySpawnEnemy(dt);
           this.maybeSpawnPowerUp(dt);
-          for (const e of this.enemies) e.update(dt);
+          for (const e of this.enemies) e.update(dt, this.time);
           for (const p of this.powerups) p.update(dt);
           for (const b of this.bullets) b.update(dt);
           this.collide();
