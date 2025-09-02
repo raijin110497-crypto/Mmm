@@ -1,0 +1,512 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover" />
+  <title>MMM Fingers - Vanilla</title>
+  <meta name="theme-color" content="#59b6ff" />
+  <style>
+    :root {
+      --sky-1: #b9e6ff;
+      --sky-2: #69c3ff;
+      --fg: #0a1830;
+      --muted: #2c476e;
+      --accent: #34d06b;
+      --danger: #ff4d4f;
+      --warning: #ffcc00;
+      --shadow: rgba(0,0,0,.45);
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      background: linear-gradient(180deg, var(--sky-1), var(--sky-2));
+      color: var(--fg);
+      font: 400 16px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      overscroll-behavior: none;
+      touch-action: none;
+    }
+
+    .game-root { position: fixed; inset: 0; display: grid; grid-template-rows: 1fr; }
+    .game-canvas { width: 100%; height: 100%; display: block; touch-action: none; }
+
+    .hud { position: fixed; inset: env(safe-area-inset-top) 0 auto 0; display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; pointer-events: none; }
+    .scorebox { display: inline-flex; gap: 10px; align-items: center; background: rgba(255,255,255,.25); padding: 8px 12px; border-radius: 999px; box-shadow: 0 6px 16px var(--shadow) inset, 0 2px 10px var(--shadow); backdrop-filter: blur(6px); }
+    .score { font-weight: 800; letter-spacing: .5px; }
+    .hi { color: var(--muted); font-size: 14px; }
+
+    .overlay { position: fixed; inset: 0; display: grid; place-items: center; padding: 24px; background: radial-gradient(1200px 800px at 50% 0%, rgba(0,0,0,.12), rgba(0,0,0,.18)); }
+    .panel { width: min(520px, 92vw); background: rgba(255,255,255,.7); border: 1px solid rgba(0,0,0,.06); border-radius: 16px; box-shadow: 0 10px 30px var(--shadow); padding: 20px; text-align: center; backdrop-filter: blur(8px); }
+    .title { font-size: 30px; margin: 6px 0 2px; font-weight: 900; letter-spacing: .4px; color: #0a1830; }
+    .subtitle { margin: 0 0 12px; color: var(--muted); }
+    .pill-list { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 12px 0 18px; }
+    .pill { font-size: 13px; color: #0b220f; background: #c6f7ce; border: 1px solid #9ee8ad; border-radius: 999px; padding: 6px 10px; }
+    .btn-row { display: flex; gap: 12px; justify-content: center; }
+    .btn { appearance: none; border: none; border-radius: 12px; padding: 12px 16px; font-weight: 800; letter-spacing: .3px; cursor: pointer; box-shadow: 0 10px 20px var(--shadow), inset 0 -2px 0 rgba(0,0,0,.25); }
+    .btn-primary { background: linear-gradient(180deg, #6be675, #3bcf59); color: #0b220f; }
+    .btn-ghost { background: rgba(255,255,255,.8); color: var(--fg); border: 1px solid rgba(0,0,0,.12); }
+
+    .toast-stack { position: fixed; right: 14px; bottom: calc(14px + env(safe-area-inset-bottom)); display: grid; gap: 8px; z-index: 2; }
+    .toast { background: rgba(0,0,0,.6); color: #fff; border: 1px solid rgba(255,255,255,.08); padding: 10px 12px; border-radius: 12px; box-shadow: 0 8px 18px var(--shadow); animation: pop .22s ease-out; }
+
+    @keyframes pop { from { transform: translateY(8px) scale(.98); opacity: 0; } to { transform: translateY(0) scale(1); opacity: 1; } }
+
+    .finger-badge { position: fixed; inset: auto 50% calc(20px + env(safe-area-inset-bottom)) auto; transform: translateX(50%); color: var(--muted); font-size: 13px; text-align: center; opacity: .85; pointer-events: none; }
+
+    @media (max-width: 360px) { .title { font-size: 26px; } .pill { font-size: 12px; } }
+  </style>
+</head>
+<body>
+  <div class="game-root">
+    <canvas class="game-canvas" id="game"></canvas>
+  </div>
+
+  <div class="hud" id="hud">
+    <div class="scorebox">
+      <span class="score" id="score">0.00s</span>
+      <span class="hi" id="hi">Best: 0.00s</span>
+    </div>
+  </div>
+
+  <div class="overlay" id="startOverlay" aria-hidden="false">
+    <div class="panel">
+      <div class="title">MMM Fingers</div>
+      <p class="subtitle">Hold to play. Mario-like vibes. Avoid the chompers!</p>
+      <div class="pill-list">
+        <span class="pill">One-touch</span>
+        <span class="pill">Endless</span>
+        <span class="pill">Local highscores</span>
+        <span class="pill">Mobile ready</span>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="tapToStart">Hold to Play</button>
+        <button class="btn btn-ghost" id="howToPlay">How to play</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" id="gameOverOverlay" aria-hidden="true" style="display:none">
+    <div class="panel">
+      <div class="title">Chomp! Game Over</div>
+      <p class="subtitle" id="finalScore">You survived 0.00s</p>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="retryBtn">Hold to Retry</button>
+        <button class="btn btn-ghost" id="shareBtn">Share</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-stack" id="toasts" aria-live="polite" aria-atomic="true"></div>
+  <div class="finger-badge">Touch & hold anywhere</div>
+
+  <script>
+  (function() {
+    'use strict';
+
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    let dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+
+    const hudScore = document.getElementById('score');
+    const hudHi = document.getElementById('hi');
+    const startOverlay = document.getElementById('startOverlay');
+    const gameOverOverlay = document.getElementById('gameOverOverlay');
+    const finalScore = document.getElementById('finalScore');
+    const tapToStart = document.getElementById('tapToStart');
+    const howToPlay = document.getElementById('howToPlay');
+    const retryBtn = document.getElementById('retryBtn');
+    const shareBtn = document.getElementById('shareBtn');
+    const toasts = document.getElementById('toasts');
+
+    const store = {
+      get(key, fallback) {
+        try { const v = JSON.parse(localStorage.getItem(key)); return v ?? fallback; } catch { return fallback; }
+      },
+      set(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} }
+    };
+
+    const state = {
+      running: false,
+      dead: false,
+      startTime: 0,
+      elapsed: 0,
+      best: store.get('mmm.best', 0),
+      achievements: store.get('mmm.ach', {}),
+      finger: { x: 0, y: 0, r: 26, alive: false, trailX: 0, trailY: 0 },
+      trail: [],
+      hazards: [],
+      lastSpawn: 0,
+      spawnInterval: 650,
+      speed: 120,
+      scrollY: 0,
+      lastFrame: 0,
+      touchActive: false
+    };
+
+    function resize() {
+      const { clientWidth: w, clientHeight: h } = canvas;
+      dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+      canvas.width = Math.floor(w * dpr);
+      canvas.height = Math.floor(h * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    function fitCanvas() { canvas.style.width = '100%'; canvas.style.height = '100%'; resize(); }
+    window.addEventListener('resize', resize);
+    fitCanvas();
+
+    function show(el) { el.style.display = 'grid'; el.setAttribute('aria-hidden', 'false'); }
+    function hide(el) { el.style.display = 'none'; el.setAttribute('aria-hidden', 'true'); }
+
+    function setHUD() {
+      hudScore.textContent = state.elapsed.toFixed(2) + 's';
+      hudHi.textContent = 'Best: ' + state.best.toFixed(2) + 's';
+    }
+
+    function toast(msg) {
+      const div = document.createElement('div');
+      div.className = 'toast';
+      div.textContent = msg;
+      toasts.appendChild(div);
+      setTimeout(() => { div.style.opacity = '0'; div.style.transform = 'translateY(8px)'; }, 1600);
+      setTimeout(() => div.remove(), 2200);
+    }
+
+    function unlock(name, label) {
+      if (state.achievements[name]) return;
+      state.achievements[name] = true;
+      store.set('mmm.ach', state.achievements);
+      toast('Achievement unlocked: ' + label + ' 🎉');
+    }
+
+    function resetGame() {
+      state.hazards.length = 0;
+      state.trail.length = 0;
+      state.lastSpawn = 0;
+      state.scrollY = 0;
+      state.speed = 120;
+      state.spawnInterval = 650;
+      state.elapsed = 0;
+      state.dead = false;
+      state.running = false;
+      state.finger.alive = false;
+      state.lastFrame = performance.now();
+      setHUD();
+    }
+
+    function startRun() {
+      resetGame();
+      hide(startOverlay);
+      hide(gameOverOverlay);
+      state.running = true;
+      state.startTime = performance.now();
+      state.finger.alive = true;
+    }
+
+    function endRun(reason) {
+      if (state.dead) return;
+      state.dead = true;
+      state.running = false;
+      state.best = Math.max(state.best, state.elapsed);
+      store.set('mmm.best', state.best);
+      finalScore.textContent = 'You survived ' + state.elapsed.toFixed(2) + 's';
+      if (navigator.vibrate) navigator.vibrate(50);
+      show(gameOverOverlay);
+      setHUD();
+      if (reason === 'lift') toast("Don't lift your finger!");
+      if (state.elapsed >= 5) unlock('s5', '5 Seconds');
+      if (state.elapsed >= 10) unlock('s10', '10 Seconds');
+      if (state.elapsed >= 20) unlock('s20', '20 Seconds');
+    }
+
+    function rnd(min, max) { return Math.random() * (max - min) + min; }
+
+    function spawnHazard(t) {
+      const w = canvas.clientWidth;
+      const typeRoll = Math.random();
+      if (typeRoll < 0.45) {
+        const r = rnd(16, 28);
+        const x = 30 + Math.random() * (w - 60);
+        const y = -r - 20;
+        const speed = state.speed * rnd(0.9, 1.15);
+        const rotSpeed = rnd(-1.2, 1.2);
+        const spikes = 10 + Math.floor(Math.random() * 6);
+        state.hazards.push({ type: 'ball', x, y, r, vy: speed, angle: 0, rotSpeed, spikes });
+      } else if (typeRoll < 0.75) {
+        const r = rnd(18, 30);
+        const x = 30 + Math.random() * (w - 60);
+        const y = -r - 20;
+        const speed = state.speed * rnd(0.92, 1.18);
+        const rotSpeed = rnd(-1.1, 1.1);
+        state.hazards.push({ type: 'square', x, y, r, vy: speed, angle: 0, rotSpeed });
+      } else {
+        const len = rnd(120, 200);
+        const width = 18;
+        const x = 40 + Math.random() * (w - 80);
+        const y = -40;
+        const speed = state.speed * rnd(0.85, 1.05);
+        const rotSpeed = rnd(-1.0, 1.0);
+        state.hazards.push({ type: 'bar', x, y, len, width, vy: speed, angle: rnd(0, Math.PI), rotSpeed });
+      }
+      state.lastSpawn = t;
+      state.speed = Math.min(420, state.speed + 0.7);
+      state.spawnInterval = Math.max(240, state.spawnInterval - 3);
+    }
+
+    function drawBackdrop(dt) {
+      const w = canvas.clientWidth, h = canvas.clientHeight;
+      state.scrollY += (state.speed * 0.15) * (dt/1000);
+
+      // Soft diagonal stripes
+      ctx.save();
+      ctx.globalAlpha = 0.15;
+      ctx.fillStyle = '#ffffff';
+      const stripe = 140;
+      const off = -state.scrollY % stripe;
+      for (let y = -stripe + off; y < h + stripe; y += stripe) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y + stripe);
+        ctx.lineTo(w, y + stripe - 18);
+        ctx.lineTo(0, y - 18);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
+
+      // Dotted side posts (like level borders)
+      ctx.save();
+      ctx.globalAlpha = 0.25;
+      ctx.fillStyle = 'rgba(0,0,0,.2)';
+      const gap = 52; const offY = state.scrollY % gap;
+      for (let y = -gap + offY; y < h + gap; y += gap) {
+        ctx.beginPath(); ctx.arc(12, y, 5, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(w - 12, y + 18, 5, 0, Math.PI*2); ctx.fill();
+      }
+      ctx.restore();
+
+      // Parallax hills
+      const base = h - 40;
+      ctx.save();
+      ctx.translate(0, (state.scrollY * 0.2) % h);
+      ctx.fillStyle = '#7bd67b';
+      ctx.beginPath();
+      ctx.moveTo(-100, base);
+      for (let i = -2; i < 6; i++) {
+        const cx = i * 160 + 80;
+        ctx.quadraticCurveTo(cx - 60, base - 40, cx, base);
+        ctx.quadraticCurveTo(cx + 60, base + 40, cx + 120, base);
+      }
+      ctx.lineTo(w + 100, h + 100); ctx.lineTo(-100, h + 100); ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+
+    function drawBall(hz, dt) {
+      hz.y += hz.vy * (dt/1000);
+      hz.angle += hz.rotSpeed * (dt/1000);
+      const spikes = hz.spikes; const inner = hz.r * 0.65; const outer = hz.r;
+      ctx.save(); ctx.translate(hz.x, hz.y); ctx.rotate(hz.angle);
+      ctx.beginPath();
+      for (let i = 0; i < spikes * 2; i++) {
+        const rad = (i % 2 === 0) ? outer : inner;
+        const a = (i / (spikes * 2)) * Math.PI * 2;
+        const px = Math.cos(a) * rad; const py = Math.sin(a) * rad;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      const grad = ctx.createRadialGradient(0,0, inner*0.2, 0,0, outer);
+      grad.addColorStop(0, '#6dfc61'); grad.addColorStop(1, '#2e9e34');
+      ctx.fillStyle = grad; ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 2; ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.fillStyle = '#10131a'; ctx.arc(0, 0, inner*0.35, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.fillStyle = '#f2f5ff'; ctx.arc(inner*0.12, -inner*0.08, inner*0.14, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+    }
+
+    function drawSquare(hz, dt) {
+      hz.y += hz.vy * (dt/1000); hz.angle += hz.rotSpeed * (dt/1000);
+      const r = hz.r; const spikes = 4; const inner = r; const outer = r * 1.2;
+      ctx.save(); ctx.translate(hz.x, hz.y); ctx.rotate(hz.angle);
+      // spikes around
+      ctx.beginPath();
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2 + Math.PI/8;
+        const px = Math.cos(a) * outer; const py = Math.sin(a) * outer;
+        ctx.lineTo(px, py);
+      }
+      ctx.closePath(); ctx.fillStyle = '#ff6b7a'; ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 2; ctx.fill(); ctx.stroke();
+      // body
+      ctx.fillStyle = '#e33949';
+      ctx.beginPath(); ctx.rect(-inner, -inner, inner*2, inner*2); ctx.fill();
+      // eyes
+      ctx.fillStyle = '#10131a';
+      ctx.beginPath(); ctx.arc(-r*0.35, -r*0.1, r*0.28, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(r*0.35, -r*0.1, r*0.28, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#f2f5ff';
+      ctx.beginPath(); ctx.arc(-r*0.25, -r*0.18, r*0.12, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(r*0.45, -r*0.18, r*0.12, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+    }
+
+    function drawBar(hz, dt) {
+      hz.y += hz.vy * (dt/1000); hz.angle += hz.rotSpeed * (dt/1000);
+      const half = hz.len / 2; const w = hz.width;
+      ctx.save(); ctx.translate(hz.x, hz.y); ctx.rotate(hz.angle);
+      // bar
+      const grd = ctx.createLinearGradient(-half, 0, half, 0);
+      grd.addColorStop(0, '#ffcf59'); grd.addColorStop(1, '#ff8e2a');
+      ctx.fillStyle = grd; ctx.strokeStyle = '#2b1b00'; ctx.lineWidth = 2;
+      const radius = w * 0.9;
+      roundRect(ctx, -half, -w/2, hz.len, w, radius); ctx.fill(); ctx.stroke();
+      // spikes along
+      ctx.fillStyle = '#2b1b00';
+      const step = 18;
+      for (let x = -half + step; x < half - step; x += step) {
+        ctx.beginPath(); ctx.moveTo(x, -w/2 - 2); ctx.lineTo(x + 6, -w/2 - 12); ctx.lineTo(x + 12, -w/2 - 2); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(x, w/2 + 2); ctx.lineTo(x + 6, w/2 + 12); ctx.lineTo(x + 12, w/2 + 2); ctx.closePath(); ctx.fill();
+      }
+      // end wheels
+      ctx.fillStyle = '#ffb13b'; ctx.strokeStyle = '#2b1b00';
+      ctx.beginPath(); ctx.arc(-half, 0, w*0.95, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.arc(half, 0, w*0.95, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawHazard(hz, dt) {
+      if (hz.type === 'ball') drawBall(hz, dt);
+      else if (hz.type === 'square') drawSquare(hz, dt);
+      else drawBar(hz, dt);
+    }
+
+    function drawFinger(dt) {
+      const f = state.finger;
+      const ease = 1 - Math.pow(0.001, dt/16.67);
+      f.trailX += (f.x - f.trailX) * ease;
+      f.trailY += (f.y - f.trailY) * ease;
+
+      // trail dots
+      if (state.touchActive) {
+        state.trail.push({ x: f.trailX, y: f.trailY, t: performance.now() });
+        if (state.trail.length > 60) state.trail.shift();
+      }
+      const now = performance.now();
+      for (let i = 0; i < state.trail.length; i++) {
+        const p = state.trail[i];
+        const age = (now - p.t) / 1000;
+        const alpha = Math.max(0, 1 - age * 1.5);
+        if (alpha <= 0) continue;
+        ctx.globalAlpha = alpha * 0.35;
+        ctx.fillStyle = '#1f6fff';
+        ctx.beginPath(); ctx.arc(p.x, p.y, 6, 0, Math.PI*2); ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+
+      // finger disc
+      ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.35)'; ctx.shadowBlur = 16;
+      const grad = ctx.createRadialGradient(f.trailX - f.r*0.25, f.trailY - f.r*0.25, f.r*0.25, f.trailX, f.trailY, f.r);
+      grad.addColorStop(0, '#ffeeaa'); grad.addColorStop(1, '#ff8f2e');
+      ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(f.trailX, f.trailY, f.r, 0, Math.PI*2); ctx.fill();
+      ctx.shadowBlur = 0; ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(0,0,0,.25)'; ctx.stroke();
+    }
+
+    function collideFingerBall(f, hz) {
+      const dx = (f.trailX ?? f.x) - hz.x; const dy = (f.trailY ?? f.y) - hz.y; const r = f.r + hz.r * 0.9; return dx*dx + dy*dy <= r*r;
+    }
+
+    function distPointToSegment(px, py, x1, y1, x2, y2) {
+      const vx = x2 - x1, vy = y2 - y1; const wx = px - x1, wy = py - y1;
+      const c1 = vx*wx + vy*wy; if (c1 <= 0) return Math.hypot(px - x1, py - y1);
+      const c2 = vx*vx + vy*vy; if (c2 <= c1) return Math.hypot(px - x2, py - y2);
+      const b = c1 / c2; const bx = x1 + b * vx, by = y1 + b * vy; return Math.hypot(px - bx, py - by);
+    }
+
+    function collideFingerBar(f, hz) {
+      const cx = hz.x, cy = hz.y; const half = hz.len/2; const w = hz.width;
+      const s = Math.sin(hz.angle), c = Math.cos(hz.angle);
+      const x1 = cx - half * c, y1 = cy - half * s; const x2 = cx + half * c, y2 = cy + half * s;
+      const d = distPointToSegment(f.trailX ?? f.x, f.trailY ?? f.y, x1, y1, x2, y2);
+      if (d <= w/2 + f.r * 0.6) return true;
+      const d1 = Math.hypot((f.trailX ?? f.x) - x1, (f.trailY ?? f.y) - y1);
+      const d2 = Math.hypot((f.trailX ?? f.x) - x2, (f.trailY ?? f.y) - y2);
+      return d1 <= f.r + w*0.95 || d2 <= f.r + w*0.95;
+    }
+
+    function step(t) {
+      const now = t; const dt = Math.min(34, now - (state.lastFrame || now)); state.lastFrame = now;
+      ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+      drawBackdrop(dt);
+
+      if (state.running && now - state.lastSpawn > state.spawnInterval) spawnHazard(now);
+
+      for (let i = state.hazards.length - 1; i >= 0; i--) {
+        const h = state.hazards[i]; drawHazard(h, dt);
+        const off = 60 + (h.r || h.width);
+        if (h.y - off > canvas.clientHeight) state.hazards.splice(i,1);
+      }
+
+      if (state.finger.alive) drawFinger(dt);
+
+      if (state.running) {
+        for (let i = 0; i < state.hazards.length; i++) {
+          const h = state.hazards[i];
+          let hit = false;
+          if (h.type === 'bar') hit = collideFingerBar(state.finger, h);
+          else hit = collideFingerBall(state.finger, h);
+          if (hit) { endRun('hit'); break; }
+        }
+      }
+
+      if (state.running) {
+        state.elapsed = (now - state.startTime) / 1000; setHUD();
+        // big score top center
+        ctx.save(); ctx.font = '900 40px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif'; ctx.textAlign = 'center'; ctx.lineWidth = 6; ctx.lineJoin = 'round';
+        ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.strokeText(Math.floor(state.elapsed * 100).toString(), canvas.clientWidth/2, 60);
+        ctx.fillStyle = '#184c0e'; ctx.fillText(Math.floor(state.elapsed * 100).toString(), canvas.clientWidth/2, 60); ctx.restore();
+      }
+
+      requestAnimationFrame(step);
+    }
+
+    requestAnimationFrame(step);
+
+    function updateFingerFromEvent(ev) {
+      const rect = canvas.getBoundingClientRect();
+      const t = (ev.touches && ev.touches[0]) || (ev.changedTouches && ev.changedTouches[0]) || ev;
+      const x = (t.clientX - rect.left); const y = (t.clientY - rect.top);
+      state.finger.x = x; state.finger.y = y;
+      if (!state.finger.trailX && !state.finger.trailY) { state.finger.trailX = x; state.finger.trailY = y; }
+    }
+
+    function onPress(ev) { ev.preventDefault(); state.touchActive = true; updateFingerFromEvent(ev); if (!state.running && !state.dead) startRun(); if (state.dead) { resetGame(); startRun(); } }
+    function onMove(ev) { ev.preventDefault(); if (!state.touchActive) return; updateFingerFromEvent(ev); }
+    function onRelease(ev) { ev.preventDefault(); state.touchActive = false; if (state.running) endRun('lift'); }
+
+    canvas.addEventListener('touchstart', onPress, { passive: false });
+    canvas.addEventListener('touchmove', onMove, { passive: false });
+    canvas.addEventListener('touchend', onRelease, { passive: false });
+    canvas.addEventListener('touchcancel', onRelease, { passive: false });
+    canvas.addEventListener('mousedown', onPress); window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onRelease);
+
+    tapToStart.addEventListener('click', () => { hide(startOverlay); toast('Hold to play'); });
+    howToPlay.addEventListener('click', () => { toast('Hold your finger on the screen and avoid the chompers!'); });
+    retryBtn.addEventListener('click', () => { hide(gameOverOverlay); toast('Hold to start'); });
+    shareBtn.addEventListener('click', async () => {
+      const text = 'I survived ' + state.best.toFixed(2) + 's in MMM Fingers!';
+      try { if (navigator.share) await navigator.share({ text, title: 'MMM Fingers' }); else { await navigator.clipboard.writeText(text); toast('Copied to clipboard'); } } catch {}
+    });
+
+    setHUD(); if (state.best > 0) toast('Best: ' + state.best.toFixed(2) + 's');
+
+    function roundRect(ctx, x, y, width, height, radius) {
+      radius = Math.min(radius, width/2, height/2);
+      ctx.beginPath();
+      ctx.moveTo(x + radius, y);
+      ctx.arcTo(x + width, y, x + width, y + height, radius);
+      ctx.arcTo(x + width, y + height, x, y + height, radius);
+      ctx.arcTo(x, y + height, x, y, radius);
+      ctx.arcTo(x, y, x + width, y, radius);
+      ctx.closePath();
+    }
+  })();
+  </script>
+</body>
+</html>
