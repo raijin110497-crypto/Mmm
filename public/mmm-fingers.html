@@ -125,6 +125,23 @@
       set(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} }
     };
 
+    const audio = {
+      ctx: null,
+      init() { try { if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {} },
+      beep(freq, dur, type, vol) {
+        try {
+          this.init(); if (!this.ctx) return; const ctx = this.ctx;
+          const t0 = ctx.currentTime; const o = ctx.createOscillator(); const g = ctx.createGain();
+          o.type = type || 'sine'; o.frequency.setValueAtTime(freq || 440, t0);
+          g.gain.setValueAtTime(vol ?? 0.08, t0); g.gain.exponentialRampToValueAtTime(0.0001, t0 + (dur || 0.08));
+          o.connect(g); g.connect(ctx.destination); o.start(); o.stop(t0 + (dur || 0.08));
+        } catch(e) {}
+      },
+      hit() { this.beep(160, 0.12, 'square', 0.18); this.beep(110, 0.18, 'square', 0.18); },
+      start() { this.beep(660, 0.06, 'triangle', 0.1); this.beep(880, 0.06, 'triangle', 0.1); },
+      ach() { this.beep(780, 0.08, 'triangle', 0.1); this.beep(980, 0.12, 'triangle', 0.1); }
+    };
+
     const state = {
       running: false,
       dead: false,
@@ -132,7 +149,7 @@
       elapsed: 0,
       best: store.get('mmm.best', 0),
       achievements: store.get('mmm.ach', {}),
-      finger: { x: 0, y: 0, r: 26, alive: false, trailX: 0, trailY: 0 },
+      finger: { x: 0, y: 0, r: 18, alive: false, trailX: 0, trailY: 0 },
       trail: [],
       hazards: [],
       lastSpawn: 0,
@@ -177,6 +194,7 @@
       state.achievements[name] = true;
       store.set('mmm.ach', state.achievements);
       toast('Achievement unlocked: ' + label + ' 🎉');
+      audio.ach();
     }
 
     function resetGame() {
@@ -201,6 +219,7 @@
       state.running = true;
       state.startTime = performance.now();
       state.finger.alive = true;
+      audio.start();
     }
 
     function endRun(reason) {
@@ -213,6 +232,7 @@
       if (navigator.vibrate) navigator.vibrate(50);
       show(gameOverOverlay);
       setHUD();
+      audio.hit();
       if (reason === 'lift') toast("Don't lift your finger!");
       if (state.elapsed >= 5) unlock('s5', '5 Seconds');
       if (state.elapsed >= 10) unlock('s10', '10 Seconds');
@@ -220,6 +240,32 @@
     }
 
     function rnd(min, max) { return Math.random() * (max - min) + min; }
+
+    function chooseMovement(hz) {
+      const w = canvas.clientWidth; const margin = 24;
+      hz.anchorX = hz.x; hz.anchorY = hz.y; hz.born = performance.now();
+      const roll = Math.random();
+      if (hz.type === 'bar') {
+        if (roll < 0.5) {
+          hz.mv = 'swing';
+          hz.baseAngle = hz.angle || 0; hz.swingAmp = rnd(0.3, 0.8); hz.omega = rnd(0.7, 1.3); hz.phase = rnd(0, Math.PI*2);
+        } else {
+          hz.mv = 'side';
+          hz.omega = rnd(0.8, 1.5); hz.phase = rnd(0, Math.PI*2); hz.amp = Math.min(w * 0.28, rnd(40, 90));
+          hz.anchorX = Math.max(margin + hz.amp, Math.min(w - margin - hz.amp, hz.anchorX));
+        }
+        return;
+      }
+      if (roll < 0.33) {
+        hz.mv = 'side'; hz.omega = rnd(0.8, 1.8); hz.phase = rnd(0, Math.PI*2); hz.amp = Math.min(w * 0.3, rnd(40, 110));
+        hz.anchorX = Math.max(margin + hz.amp, Math.min(w - margin - hz.amp, hz.anchorX));
+      } else if (roll < 0.66) {
+        hz.mv = 'circle'; hz.omega = rnd(1.2, 2.2); hz.phase = rnd(0, Math.PI*2); hz.rad = rnd(18, 40);
+        hz.anchorX = Math.max(margin + hz.rad, Math.min(w - margin - hz.rad, hz.anchorX));
+      } else {
+        hz.mv = 'diag'; hz.vx = rnd(-90, 90); if (Math.abs(hz.vx) < 50) hz.vx = hz.vx < 0 ? -60 : 60;
+      }
+    }
 
     function spawnHazard(t) {
       const w = canvas.clientWidth;
@@ -231,14 +277,16 @@
         const speed = state.speed * rnd(0.9, 1.15);
         const rotSpeed = rnd(-1.2, 1.2);
         const spikes = 10 + Math.floor(Math.random() * 6);
-        state.hazards.push({ type: 'ball', x, y, r, vy: speed, angle: 0, rotSpeed, spikes });
+        const hz = { type: 'ball', x, y, r, vy: speed, angle: 0, rotSpeed, spikes };
+        chooseMovement(hz); state.hazards.push(hz);
       } else if (typeRoll < 0.75) {
         const r = rnd(18, 30);
         const x = 30 + Math.random() * (w - 60);
         const y = -r - 20;
         const speed = state.speed * rnd(0.92, 1.18);
         const rotSpeed = rnd(-1.1, 1.1);
-        state.hazards.push({ type: 'square', x, y, r, vy: speed, angle: 0, rotSpeed });
+        const hz = { type: 'square', x, y, r, vy: speed, angle: 0, rotSpeed };
+        chooseMovement(hz); state.hazards.push(hz);
       } else {
         const len = rnd(120, 200);
         const width = 18;
@@ -246,18 +294,45 @@
         const y = -40;
         const speed = state.speed * rnd(0.85, 1.05);
         const rotSpeed = rnd(-1.0, 1.0);
-        state.hazards.push({ type: 'bar', x, y, len, width, vy: speed, angle: rnd(0, Math.PI), rotSpeed });
+        const hz = { type: 'bar', x, y, len, width, vy: speed, angle: rnd(0, Math.PI), rotSpeed };
+        chooseMovement(hz); state.hazards.push(hz);
       }
       state.lastSpawn = t;
       state.speed = Math.min(420, state.speed + 0.7);
-      state.spawnInterval = Math.max(240, state.spawnInterval - 3);
+      state.spawnInterval = Math.max(260, state.spawnInterval - 2);
+    }
+
+    function updateHazard(hz, dt, now) {
+      const w = canvas.clientWidth; const margin = 18; const life = (now - (hz.born || now)) / 1000;
+      if (hz.anchorY == null) hz.anchorY = hz.y; if (hz.anchorX == null) hz.anchorX = hz.x;
+      hz.anchorY += hz.vy * (dt/1000);
+
+      if (hz.mv === 'side') {
+        const dx = (hz.amp || 0) * Math.sin((hz.omega || 1) * life + (hz.phase || 0));
+        hz.x = hz.anchorX + dx; hz.y = hz.anchorY;
+      } else if (hz.mv === 'circle') {
+        const a = (hz.omega || 1.5) * life + (hz.phase || 0);
+        hz.x = hz.anchorX + (hz.rad || 24) * Math.cos(a);
+        hz.y = hz.anchorY + (hz.rad || 24) * Math.sin(a);
+      } else if (hz.mv === 'diag') {
+        hz.y = hz.anchorY; hz.x += (hz.vx || 0) * (dt/1000);
+        if (hz.x < margin) { hz.x = margin; hz.vx = Math.abs(hz.vx || 0); }
+        if (hz.x > w - margin) { hz.x = w - margin; hz.vx = -Math.abs(hz.vx || 0); }
+      } else {
+        hz.x = hz.anchorX; hz.y = hz.anchorY;
+      }
+
+      if (hz.swingAmp != null) {
+        hz.angle = (hz.baseAngle || 0) + hz.swingAmp * Math.sin((hz.omega || 1) * life + (hz.phase || 0));
+      } else {
+        hz.angle += (hz.rotSpeed || 0) * (dt/1000);
+      }
     }
 
     function drawBackdrop(dt) {
       const w = canvas.clientWidth, h = canvas.clientHeight;
       state.scrollY += (state.speed * 0.15) * (dt/1000);
 
-      // Soft diagonal stripes
       ctx.save();
       ctx.globalAlpha = 0.15;
       ctx.fillStyle = '#ffffff';
@@ -274,7 +349,6 @@
       }
       ctx.restore();
 
-      // Dotted side posts (like level borders)
       ctx.save();
       ctx.globalAlpha = 0.25;
       ctx.fillStyle = 'rgba(0,0,0,.2)';
@@ -285,7 +359,6 @@
       }
       ctx.restore();
 
-      // Parallax hills
       const base = h - 40;
       ctx.save();
       ctx.translate(0, (state.scrollY * 0.2) % h);
@@ -301,11 +374,9 @@
       ctx.restore();
     }
 
-    function drawBall(hz, dt) {
-      hz.y += hz.vy * (dt/1000);
-      hz.angle += hz.rotSpeed * (dt/1000);
+    function drawBall(hz) {
       const spikes = hz.spikes; const inner = hz.r * 0.65; const outer = hz.r;
-      ctx.save(); ctx.translate(hz.x, hz.y); ctx.rotate(hz.angle);
+      ctx.save(); ctx.translate(hz.x, hz.y); ctx.rotate(hz.angle || 0);
       ctx.beginPath();
       for (let i = 0; i < spikes * 2; i++) {
         const rad = (i % 2 === 0) ? outer : inner;
@@ -322,11 +393,9 @@
       ctx.restore();
     }
 
-    function drawSquare(hz, dt) {
-      hz.y += hz.vy * (dt/1000); hz.angle += hz.rotSpeed * (dt/1000);
-      const r = hz.r; const spikes = 4; const inner = r; const outer = r * 1.2;
-      ctx.save(); ctx.translate(hz.x, hz.y); ctx.rotate(hz.angle);
-      // spikes around
+    function drawSquare(hz) {
+      const r = hz.r; const inner = r; const outer = r * 1.2;
+      ctx.save(); ctx.translate(hz.x, hz.y); ctx.rotate(hz.angle || 0);
       ctx.beginPath();
       for (let i = 0; i < 8; i++) {
         const a = (i / 8) * Math.PI * 2 + Math.PI/8;
@@ -334,10 +403,8 @@
         ctx.lineTo(px, py);
       }
       ctx.closePath(); ctx.fillStyle = '#ff6b7a'; ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 2; ctx.fill(); ctx.stroke();
-      // body
       ctx.fillStyle = '#e33949';
       ctx.beginPath(); ctx.rect(-inner, -inner, inner*2, inner*2); ctx.fill();
-      // eyes
       ctx.fillStyle = '#10131a';
       ctx.beginPath(); ctx.arc(-r*0.35, -r*0.1, r*0.28, 0, Math.PI*2); ctx.fill();
       ctx.beginPath(); ctx.arc(r*0.35, -r*0.1, r*0.28, 0, Math.PI*2); ctx.fill();
@@ -347,34 +414,30 @@
       ctx.restore();
     }
 
-    function drawBar(hz, dt) {
-      hz.y += hz.vy * (dt/1000); hz.angle += hz.rotSpeed * (dt/1000);
+    function drawBar(hz) {
       const half = hz.len / 2; const w = hz.width;
-      ctx.save(); ctx.translate(hz.x, hz.y); ctx.rotate(hz.angle);
-      // bar
+      ctx.save(); ctx.translate(hz.x, hz.y); ctx.rotate(hz.angle || 0);
       const grd = ctx.createLinearGradient(-half, 0, half, 0);
       grd.addColorStop(0, '#ffcf59'); grd.addColorStop(1, '#ff8e2a');
       ctx.fillStyle = grd; ctx.strokeStyle = '#2b1b00'; ctx.lineWidth = 2;
       const radius = w * 0.9;
       roundRect(ctx, -half, -w/2, hz.len, w, radius); ctx.fill(); ctx.stroke();
-      // spikes along
       ctx.fillStyle = '#2b1b00';
       const step = 18;
       for (let x = -half + step; x < half - step; x += step) {
         ctx.beginPath(); ctx.moveTo(x, -w/2 - 2); ctx.lineTo(x + 6, -w/2 - 12); ctx.lineTo(x + 12, -w/2 - 2); ctx.closePath(); ctx.fill();
         ctx.beginPath(); ctx.moveTo(x, w/2 + 2); ctx.lineTo(x + 6, w/2 + 12); ctx.lineTo(x + 12, w/2 + 2); ctx.closePath(); ctx.fill();
       }
-      // end wheels
       ctx.fillStyle = '#ffb13b'; ctx.strokeStyle = '#2b1b00';
       ctx.beginPath(); ctx.arc(-half, 0, w*0.95, 0, Math.PI*2); ctx.fill(); ctx.stroke();
       ctx.beginPath(); ctx.arc(half, 0, w*0.95, 0, Math.PI*2); ctx.fill(); ctx.stroke();
       ctx.restore();
     }
 
-    function drawHazard(hz, dt) {
-      if (hz.type === 'ball') drawBall(hz, dt);
-      else if (hz.type === 'square') drawSquare(hz, dt);
-      else drawBar(hz, dt);
+    function drawHazard(hz) {
+      if (hz.type === 'ball') drawBall(hz);
+      else if (hz.type === 'square') drawSquare(hz);
+      else drawBar(hz);
     }
 
     function drawFinger(dt) {
@@ -383,7 +446,6 @@
       f.trailX += (f.x - f.trailX) * ease;
       f.trailY += (f.y - f.trailY) * ease;
 
-      // trail dots
       if (state.touchActive) {
         state.trail.push({ x: f.trailX, y: f.trailY, t: performance.now() });
         if (state.trail.length > 60) state.trail.shift();
@@ -400,7 +462,6 @@
         ctx.globalAlpha = 1;
       }
 
-      // finger disc
       ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.35)'; ctx.shadowBlur = 16;
       const grad = ctx.createRadialGradient(f.trailX - f.r*0.25, f.trailY - f.r*0.25, f.r*0.25, f.trailX, f.trailY, f.r);
       grad.addColorStop(0, '#ffeeaa'); grad.addColorStop(1, '#ff8f2e');
@@ -438,9 +499,12 @@
       if (state.running && now - state.lastSpawn > state.spawnInterval) spawnHazard(now);
 
       for (let i = state.hazards.length - 1; i >= 0; i--) {
-        const h = state.hazards[i]; drawHazard(h, dt);
+        const h = state.hazards[i];
+        updateHazard(h, dt, now);
+        drawHazard(h);
         const off = 60 + (h.r || h.width);
-        if (h.y - off > canvas.clientHeight) state.hazards.splice(i,1);
+        const baseY = h.anchorY != null ? h.anchorY : h.y;
+        if (baseY - off > canvas.clientHeight) state.hazards.splice(i,1);
       }
 
       if (state.finger.alive) drawFinger(dt);
@@ -457,7 +521,6 @@
 
       if (state.running) {
         state.elapsed = (now - state.startTime) / 1000; setHUD();
-        // big score top center
         ctx.save(); ctx.font = '900 40px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif'; ctx.textAlign = 'center'; ctx.lineWidth = 6; ctx.lineJoin = 'round';
         ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.strokeText(Math.floor(state.elapsed * 100).toString(), canvas.clientWidth/2, 60);
         ctx.fillStyle = '#184c0e'; ctx.fillText(Math.floor(state.elapsed * 100).toString(), canvas.clientWidth/2, 60); ctx.restore();
@@ -476,7 +539,7 @@
       if (!state.finger.trailX && !state.finger.trailY) { state.finger.trailX = x; state.finger.trailY = y; }
     }
 
-    function onPress(ev) { ev.preventDefault(); state.touchActive = true; updateFingerFromEvent(ev); if (!state.running && !state.dead) startRun(); if (state.dead) { resetGame(); startRun(); } }
+    function onPress(ev) { ev.preventDefault(); state.touchActive = true; audio.init(); updateFingerFromEvent(ev); if (!state.running && !state.dead) startRun(); if (state.dead) { resetGame(); startRun(); } }
     function onMove(ev) { ev.preventDefault(); if (!state.touchActive) return; updateFingerFromEvent(ev); }
     function onRelease(ev) { ev.preventDefault(); state.touchActive = false; if (state.running) endRun('lift'); }
 
