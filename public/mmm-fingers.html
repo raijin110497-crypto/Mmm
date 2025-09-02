@@ -61,6 +61,8 @@
     <canvas class="game-canvas" id="game"></canvas>
   </div>
 
+  <audio id="bgMusic" src="https://cdn.builder.io/o/assets%2Fee9df2374f664361817b4952e9f85c29%2Fafc90593f87f4cfcba88a8baf0597ad6?alt=media&token=e3fd7c16-c9a1-4560-b2db-bc0907a0085c&apiKey=ee9df2374f664361817b4952e9f85c29" preload="auto" loop playsinline style="position:absolute;left:-9999px;width:0;height:0;opacity:0"></audio>
+
   <div class="hud" id="hud">
     <div class="scorebox">
       <span class="score" id="score">0.00s</span>
@@ -117,6 +119,7 @@
     const retryBtn = document.getElementById('retryBtn');
     const shareBtn = document.getElementById('shareBtn');
     const toasts = document.getElementById('toasts');
+    const bgMusic = document.getElementById('bgMusic');
 
     const store = {
       get(key, fallback) {
@@ -232,7 +235,7 @@
       if (navigator.vibrate) navigator.vibrate(50);
       show(gameOverOverlay);
       setHUD();
-      audio.hit();
+      audio.hit(); try { if (bgMusic) { bgMusic.pause(); bgMusic.currentTime = 0; } } catch(e) {}
       if (reason === 'lift') toast("Don't lift your finger!");
       if (state.elapsed >= 5) unlock('s5', '5 Seconds');
       if (state.elapsed >= 10) unlock('s10', '10 Seconds');
@@ -585,7 +588,7 @@
       if (!state.finger.trailX && !state.finger.trailY) { state.finger.trailX = x; state.finger.trailY = y; }
     }
 
-    function onPress(ev) { ev.preventDefault(); state.touchActive = true; audio.init(); updateFingerFromEvent(ev); if (!state.running && !state.dead) startRun(); if (state.dead) { resetGame(); startRun(); } }
+    function onPress(ev) { ev.preventDefault(); state.touchActive = true; audio.init(); try { if (bgMusic) { bgMusic.loop = true; if (bgMusic.paused) { bgMusic.volume = 0.25; bgMusic.play().catch(() => {}); } } } catch(e) {} updateFingerFromEvent(ev); if (!state.running && !state.dead) startRun(); if (state.dead) { resetGame(); startRun(); } }
     function onMove(ev) { ev.preventDefault(); if (!state.touchActive) return; updateFingerFromEvent(ev); }
     function onRelease(ev) { ev.preventDefault(); state.touchActive = false; if (state.running) endRun('lift'); }
 
