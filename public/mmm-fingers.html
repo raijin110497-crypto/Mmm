@@ -554,6 +554,19 @@
       }
       ctx.lineTo(w + 100, h + 100); ctx.lineTo(-100, h + 100); ctx.closePath(); ctx.fill();
       ctx.restore();
+
+      // side spike rails
+      drawSideRails(w, h, state.bgScrollY);
+    }
+
+    function drawSideRails(w, h, scroll) {
+      const spikeGap = 48; const off = scroll % spikeGap; const edgeX = RAIL_W - 6;
+      ctx.save(); ctx.fillStyle = '#ff9f3b'; ctx.strokeStyle = '#2b1b00'; ctx.lineWidth = 2;
+      for (let y = -spikeGap + off; y < h + spikeGap; y += spikeGap) {
+        ctx.beginPath(); ctx.moveTo(RAIL_W, y); ctx.lineTo(edgeX, y + 14); ctx.lineTo(RAIL_W, y + 28); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(w - RAIL_W, y); ctx.lineTo(w - edgeX, y + 14); ctx.lineTo(w - RAIL_W, y + 28); ctx.closePath(); ctx.fill(); ctx.stroke();
+      }
+      ctx.restore();
     }
 
     function drawEnemy(e) {
