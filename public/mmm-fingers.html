@@ -157,7 +157,10 @@
       trail: [],
       enemies: [],
       obstacles: [],
+      entities: [],
       spawnTimer: 0,
+      waveTimer: 0,
+      nextWaveIn: 0,
       bgScrollY: 0,
       bgSpeed: 120,
       lastFrame: 0,
@@ -212,6 +215,9 @@
       state.running = false;
       state.finger.alive = false;
       state.lastFrame = performance.now();
+      state.nextWaveIn = rnd(2, 5);
+      state.waveTimer = 0;
+      state.entities.length = 0;
       setHUD();
     }
 
@@ -319,6 +325,90 @@
         enemies.push(e);
       }
       return enemies;
+    }
+
+    function enemyTypesByLevel(level) {
+      if (level < 3) return ['basic_enemy'];
+      if (level < 5) return ['basic_enemy','fast_enemy'];
+      if (level < 7) return ['basic_enemy','fast_enemy','chaser_enemy'];
+      if (level < 9) return ['basic_enemy','fast_enemy','chaser_enemy','spinning_enemy'];
+      return ['basic_enemy','fast_enemy','chaser_enemy','spinning_enemy','swarm_enemy'];
+    }
+
+    function obstacleTypesByLevel(level) {
+      if (level < 4) return ['spike_block'];
+      if (level < 7) return ['spike_block','moving_wall'];
+      if (level < 9) return ['spike_block','moving_wall','rotating_blade'];
+      return ['spike_block','moving_wall','rotating_blade','trap_zone'];
+    }
+
+    function createEnemy(level, pattern, fallSpeed) {
+      const W = canvas.clientWidth;
+      const enemy = { kind: 'enemy' };
+      enemy.pattern = pattern;
+      const types = enemyTypesByLevel(level);
+      enemy.type = types[irnd(0, types.length - 1)];
+      enemy.x = rnd(12, Math.max(12, W - 12));
+      enemy.y = -50;
+      enemy.fall_speed = fallSpeed;
+      enemy.r = rnd(14, 20);
+      enemy.start_x = enemy.x; enemy.start_y = enemy.y;
+      enemy.hSpeed = rnd(0.8 + level * 0.05, 1.8 + level * 0.1);
+      enemy.movement_range = rnd(40, 110 + level * 6);
+      if (enemy.type === 'fast_enemy') enemy.fall_speed *= 1.3;
+      if (enemy.type === 'spinning_enemy' || enemy.pattern === 'rotational') {
+        enemy.pivot_x = enemy.x; enemy.pivot_y = enemy.y; enemy.angle = rnd(0, Math.PI * 2);
+      }
+      if (enemy.type === 'chaser_enemy' || enemy.pattern === 'tracking') {
+        enemy.trackFactor = 30 + level * 3;
+      }
+      if (enemy.type === 'swarm_enemy') {
+        enemy.r = rnd(10, 14); enemy.swarmSpread = rnd(20, 40);
+      }
+      if (enemy.pattern === 'random') {
+        enemy.vx = rnd(-1, 1) * (40 + level * 6); enemy.nextDirChange = performance.now()/1000 + rnd(0.8, 1.6);
+      }
+      return enemy;
+    }
+
+    function createObstacle(level, pattern, fallSpeed) {
+      const W = canvas.clientWidth;
+      const ob = { kind: 'obstacle' };
+      ob.pattern = pattern;
+      const types = obstacleTypesByLevel(level);
+      ob.type = types[irnd(0, types.length - 1)];
+      ob.x = rnd(18, Math.max(18, W - 18));
+      ob.y = -50;
+      ob.fall_speed = fallSpeed;
+      if (ob.type === 'spike_block') { ob.w = rnd(28, 42); ob.h = ob.w; ob.r = ob.w * 0.6; }
+      if (ob.type === 'moving_wall') {
+        ob.axis = Math.random() < 0.5 ? 'horizontal' : 'vertical';
+        ob.w = ob.axis === 'horizontal' ? rnd(120, 200) : rnd(26, 38);
+        ob.h = ob.axis === 'vertical' ? rnd(120, 200) : rnd(26, 38);
+        ob.range = rnd(50, 150); ob.start_x = ob.x; ob.start_y = ob.y; ob.speed = rnd(0.5, 1.5 + level * 0.1);
+      }
+      if (ob.type === 'rotating_blade') {
+        ob.pivot_x = ob.x; ob.pivot_y = ob.y; ob.radius = rnd(50, 90); ob.angle = rnd(0, Math.PI*2); ob.rotation_speed = rnd(0.5, 1.5 + level * 0.1); ob.blade_r = 16;
+      }
+      if (ob.type === 'trap_zone') {
+        ob.active_time = rnd(1, 3); ob.inactive_time = rnd(1, 3); ob.cycle = ob.active_time + ob.inactive_time; ob.start_t = performance.now()/1000; ob.w = rnd(80, 120); ob.h = rnd(80, 120);
+      }
+      if (pattern === 'random') { ob.vx = rnd(-1, 1) * (40 + level * 6); ob.nextDirChange = performance.now()/1000 + rnd(0.8, 1.6); }
+      return ob;
+    }
+
+    function spawnWave(level) {
+      const patterns = allowedPatternsByLevel(level);
+      const wave_pattern = patterns[irnd(0, patterns.length - 1)];
+      const BASE_FALL_SPEED = 80;
+      const fall_speed = BASE_FALL_SPEED + level * 12;
+      const wave_size = irnd(3, Math.min(8, 5 + Math.floor(level/2)));
+      const items = [];
+      for (let i = 0; i < wave_size; i++) {
+        if (Math.random() < 0.5) items.push(createEnemy(level, wave_pattern, fall_speed));
+        else items.push(createObstacle(level, wave_pattern, fall_speed));
+      }
+      return items;
     }
 
     function generateObstacle(level) {
@@ -468,16 +558,12 @@
     }
 
     function drawObstacle(ob, timeSec) {
-      if (ob.type === 'spike') {
+      if (ob.type === 'spike_block') {
         ctx.save();
         ctx.translate(ob.x, ob.y);
-        const r = ob.r;
+        const w = ob.w || 36, h = ob.h || w;
         ctx.fillStyle = '#e6e6e6'; ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(-r, r);
-        ctx.lineTo(0, -r);
-        ctx.lineTo(r, r);
-        ctx.closePath(); ctx.fill(); ctx.stroke();
+        roundRect(ctx, -w/2, -h/2, w, h, 8); ctx.fill(); ctx.stroke();
         ctx.restore();
       } else if (ob.type === 'moving_wall') {
         ctx.save();
@@ -555,57 +641,79 @@
       const dx = cx - nx, dy = cy - ny; return dx*dx + dy*dy <= cr*cr;
     }
 
+    function applyPattern(entity, dt, timeSec, player) {
+      const hs = entity.hSpeed || entity.speed || 1.2;
+      if (entity.pattern === 'linear_horizontal') {
+        const startX = entity.start_x != null ? entity.start_x : entity.x;
+        entity.x = startX + Math.sin(timeSec * hs) * (entity.movement_range || 80);
+      } else if (entity.pattern === 'oscillating_sine') {
+        const startX = entity.start_x != null ? entity.start_x : entity.x;
+        entity.x = startX + Math.sin(timeSec * hs) * (entity.movement_range || 90);
+      } else if (entity.pattern === 'rotational') {
+        entity.angle = (entity.angle || 0) + hs * dt;
+        entity.pivot_y = (entity.pivot_y != null ? entity.pivot_y : entity.y) + (entity.fall_speed || 80) * dt;
+        const px = entity.pivot_x != null ? entity.pivot_x : entity.x;
+        const py = entity.pivot_y;
+        entity.x = px + Math.cos(entity.angle) * (entity.movement_range || 60);
+        entity.y = py + Math.sin(entity.angle) * (entity.movement_range || 60);
+      } else if (entity.pattern === 'tracking') {
+        const dx = (player.x) - entity.x; const ux = dx / (Math.abs(dx) || 1);
+        entity.x += ux * (30 + (hs*10)) * dt;
+      } else if (entity.pattern === 'random') {
+        if (timeSec >= (entity.nextDirChange || 0)) { const sgn = Math.random() < 0.5 ? -1 : 1; entity.vx = sgn * (40 + hs * 20); entity.nextDirChange = timeSec + rnd(0.8, 1.6); }
+        entity.x += (entity.vx || 0) * dt;
+      }
+      if (entity.type === 'moving_wall') {
+        entity.x = (entity.start_x || entity.x) + Math.sin(timeSec * (entity.speed || 1)) * (entity.range || 80);
+      } else if (entity.type === 'rotating_blade') {
+        entity.angle = (entity.angle || 0) + (entity.rotation_speed || 1) * dt;
+      } else if (entity.type === 'chaser_enemy') {
+        const dx = (player.x) - entity.x; const ux = dx / (Math.abs(dx) || 1); entity.x += ux * (entity.trackFactor || 30) * dt;
+      }
+    }
+
+    function updateEntity(ent, dt, timeSec, player) {
+      ent.y += (ent.fall_speed || 80) * dt;
+      applyPattern(ent, dt, timeSec, player);
+    }
+
     function updateGame(dtMs, timeSec) {
       const dt = dtMs / 1000;
       const level = levelFromTime(state.elapsed);
-      const group_interval = Math.max(1.2, 3.2 - level * 0.15);
-      const obstacle_spawn_interval = Math.max(2.0, 5.0 - level * 0.2);
-      const max_obstacles = 2 + Math.floor(level / 2);
-
-      state.spawnTimer += dt;
-      if (state.spawnTimer >= group_interval) {
-        const wave = spawnEnemyGroup(level);
-        for (let i = 0; i < wave.length; i++) state.enemies.push(wave[i]);
-        state.spawnTimer = 0;
-      }
-      if ((timeSec % obstacle_spawn_interval) < dt && state.obstacles.length < max_obstacles) {
-        state.obstacles.push(generateObstacle(level));
+      state.waveTimer += dt;
+      if (state.waveTimer >= state.nextWaveIn) {
+        const wave = spawnWave(level);
+        for (let i = 0; i < wave.length; i++) state.entities.push(wave[i]);
+        state.waveTimer = 0; state.nextWaveIn = rnd(2, 5);
       }
 
       const player = { x: state.finger.trailX || state.finger.x, y: state.finger.trailY || state.finger.y };
 
       const H = canvas.clientHeight;
-      for (let i = state.enemies.length - 1; i >= 0; i--) {
-        const e = state.enemies[i];
-        updateEnemy(e, dt, timeSec, player);
-        if (e.y - (e.r || 0) > H + 40 || !(Number.isFinite(e.x) && Number.isFinite(e.y))) {
-          state.enemies.splice(i, 1);
-          continue;
-        }
-        if (state.running) {
-          if (collideCircleCircle(player.x, player.y, state.finger.r * 0.9, e.x, e.y, e.r)) {
-            endRun('hit'); break;
-          }
-        }
-      }
-
-      for (let i = state.obstacles.length - 1; i >= 0; i--) {
-        const ob = state.obstacles[i];
-        updateObstacle(ob, dt, timeSec);
+      for (let i = state.entities.length - 1; i >= 0; i--) {
+        const it = state.entities[i];
+        updateEntity(it, dt, timeSec, player);
+        let off = false;
+        if (it.kind === 'enemy') off = (it.y - (it.r || 0) > H + 40);
+        else { const h = it.h || (it.r || 20) * 2; off = (it.y - h/2 > H + 40); }
+        if (off || !Number.isFinite(it.x) || !Number.isFinite(it.y)) { state.entities.splice(i, 1); continue; }
         if (!state.running) continue;
-        const active = ob.type === 'trap_zone' ? isTrapActive(ob, timeSec) : true;
-        if (!active) continue;
-        if (ob.type === 'moving_wall') {
-          if (collideCircleRect(player.x, player.y, state.finger.r * 0.9, ob.x, ob.y, ob.w, ob.h)) { endRun('hit'); break; }
-        } else if (ob.type === 'rotating_blade') {
-          const bx = ob.pivot_x + Math.cos(ob.angle) * ob.radius;
-          const by = ob.pivot_y + Math.sin(ob.angle) * ob.radius;
-          if (collideCircleCircle(player.x, player.y, state.finger.r * 0.9, bx, by, ob.blade_r)) { endRun('hit'); break; }
-        } else if (ob.type === 'trap_zone') {
-          if (collideCircleRect(player.x, player.y, state.finger.r * 0.9, ob.x, ob.y, ob.w, ob.h)) { endRun('hit'); break; }
-        } else if (ob.type === 'spike') {
-          if (collideCircleCircle(player.x, player.y, state.finger.r * 0.9, ob.x, ob.y, ob.r)) { endRun('hit'); break; }
+        let hit = false;
+        if (it.kind === 'enemy') {
+          hit = collideCircleCircle(player.x, player.y, state.finger.r * 0.9, it.x, it.y, it.r || 16);
+        } else if (it.type === 'moving_wall') {
+          hit = collideCircleRect(player.x, player.y, state.finger.r * 0.9, it.x, it.y, it.w, it.h);
+        } else if (it.type === 'rotating_blade') {
+          const bx = (it.pivot_x || it.x) + Math.cos(it.angle || 0) * (it.radius || 60);
+          const by = (it.pivot_y || it.y) + Math.sin(it.angle || 0) * (it.radius || 60);
+          hit = collideCircleCircle(player.x, player.y, state.finger.r * 0.9, bx, by, it.blade_r || 16);
+        } else if (it.type === 'trap_zone') {
+          const active = isTrapActive(it, timeSec);
+          if (active) hit = collideCircleRect(player.x, player.y, state.finger.r * 0.9, it.x, it.y, it.w, it.h);
+        } else if (it.type === 'spike_block') {
+          hit = collideCircleRect(player.x, player.y, state.finger.r * 0.9, it.x, it.y, it.w, it.h);
         }
+        if (hit) { endRun('hit'); break; }
       }
     }
 
@@ -614,8 +722,10 @@
       ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
       drawBackdrop(dt);
 
-      for (let i = 0; i < state.enemies.length; i++) drawEnemy(state.enemies[i]);
-      for (let i = 0; i < state.obstacles.length; i++) drawObstacle(state.obstacles[i], now / 1000);
+      for (let i = 0; i < state.entities.length; i++) {
+        const it = state.entities[i];
+        if (it.kind === 'enemy') drawEnemy(it); else drawObstacle(it, now / 1000);
+      }
 
       if (state.finger.alive) drawFinger(dt);
 
