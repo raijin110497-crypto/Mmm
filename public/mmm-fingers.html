@@ -641,6 +641,43 @@
       const dx = cx - nx, dy = cy - ny; return dx*dx + dy*dy <= cr*cr;
     }
 
+    function applyPattern(entity, dt, timeSec, player) {
+      const hs = entity.hSpeed || entity.speed || 1.2;
+      if (entity.pattern === 'linear_horizontal') {
+        const startX = entity.start_x != null ? entity.start_x : entity.x;
+        entity.x = startX + Math.sin(timeSec * hs) * (entity.movement_range || 80);
+      } else if (entity.pattern === 'oscillating_sine') {
+        const startX = entity.start_x != null ? entity.start_x : entity.x;
+        entity.x = startX + Math.sin(timeSec * hs) * (entity.movement_range || 90);
+      } else if (entity.pattern === 'rotational') {
+        entity.angle = (entity.angle || 0) + hs * dt;
+        entity.pivot_y = (entity.pivot_y != null ? entity.pivot_y : entity.y) + (entity.fall_speed || 80) * dt;
+        const px = entity.pivot_x != null ? entity.pivot_x : entity.x;
+        const py = entity.pivot_y;
+        entity.x = px + Math.cos(entity.angle) * (entity.movement_range || 60);
+        entity.y = py + Math.sin(entity.angle) * (entity.movement_range || 60);
+      } else if (entity.pattern === 'tracking') {
+        const dx = (player.x) - entity.x; const ux = dx / (Math.abs(dx) || 1);
+        entity.x += ux * (30 + (hs*10)) * dt;
+      } else if (entity.pattern === 'random') {
+        if (timeSec >= (entity.nextDirChange || 0)) { const sgn = Math.random() < 0.5 ? -1 : 1; entity.vx = sgn * (40 + hs * 20); entity.nextDirChange = timeSec + rnd(0.8, 1.6); }
+        entity.x += (entity.vx || 0) * dt;
+      }
+      if (entity.type === 'moving_wall') {
+        if (entity.axis === 'horizontal') entity.x = (entity.start_x || entity.x) + Math.sin(timeSec * (entity.speed || 1)) * (entity.range || 80);
+        else entity.y = (entity.start_y || entity.y) + Math.sin(timeSec * (entity.speed || 1)) * (entity.range || 80);
+      } else if (entity.type === 'rotating_blade') {
+        entity.angle = (entity.angle || 0) + (entity.rotation_speed || 1) * dt;
+      } else if (entity.type === 'chaser_enemy') {
+        const dx = (player.x) - entity.x; const ux = dx / (Math.abs(dx) || 1); entity.x += ux * (entity.trackFactor || 30) * dt;
+      }
+    }
+
+    function updateEntity(ent, dt, timeSec, player) {
+      ent.y += (ent.fall_speed || 80) * dt;
+      applyPattern(ent, dt, timeSec, player);
+    }
+
     function updateGame(dtMs, timeSec) {
       const dt = dtMs / 1000;
       const level = levelFromTime(state.elapsed);
