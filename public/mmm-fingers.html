@@ -723,8 +723,10 @@
       ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
       drawBackdrop(dt);
 
-      for (let i = 0; i < state.enemies.length; i++) drawEnemy(state.enemies[i]);
-      for (let i = 0; i < state.obstacles.length; i++) drawObstacle(state.obstacles[i], now / 1000);
+      for (let i = 0; i < state.entities.length; i++) {
+        const it = state.entities[i];
+        if (it.kind === 'enemy') drawEnemy(it); else drawObstacle(it, now / 1000);
+      }
 
       if (state.finger.alive) drawFinger(dt);
 
