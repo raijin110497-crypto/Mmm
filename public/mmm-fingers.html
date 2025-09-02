@@ -753,6 +753,9 @@
 
       const player = { x: state.finger.trailX || state.finger.x, y: state.finger.trailY || state.finger.y };
 
+      // wall rails collision
+      const px = player.x; if (px < RAIL_W || px > (canvas.clientWidth - RAIL_W)) { endRun('hit'); return; }
+
       const H = canvas.clientHeight;
       for (let i = state.entities.length - 1; i >= 0; i--) {
         const it = state.entities[i];
