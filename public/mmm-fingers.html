@@ -215,6 +215,9 @@
       state.running = false;
       state.finger.alive = false;
       state.lastFrame = performance.now();
+      state.nextWaveIn = rnd(2, 5);
+      state.waveTimer = 0;
+      state.entities.length = 0;
       setHUD();
     }
 
