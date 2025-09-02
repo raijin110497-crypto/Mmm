@@ -681,54 +681,40 @@
     function updateGame(dtMs, timeSec) {
       const dt = dtMs / 1000;
       const level = levelFromTime(state.elapsed);
-      const group_interval = Math.max(1.2, 3.2 - level * 0.15);
-      const obstacle_spawn_interval = Math.max(2.0, 5.0 - level * 0.2);
-      const max_obstacles = 2 + Math.floor(level / 2);
-
-      state.spawnTimer += dt;
-      if (state.spawnTimer >= group_interval) {
-        const wave = spawnEnemyGroup(level);
-        for (let i = 0; i < wave.length; i++) state.enemies.push(wave[i]);
-        state.spawnTimer = 0;
-      }
-      if ((timeSec % obstacle_spawn_interval) < dt && state.obstacles.length < max_obstacles) {
-        state.obstacles.push(generateObstacle(level));
+      state.waveTimer += dt;
+      if (state.waveTimer >= state.nextWaveIn) {
+        const wave = spawnWave(level);
+        for (let i = 0; i < wave.length; i++) state.entities.push(wave[i]);
+        state.waveTimer = 0; state.nextWaveIn = rnd(2, 5);
       }
 
       const player = { x: state.finger.trailX || state.finger.x, y: state.finger.trailY || state.finger.y };
 
       const H = canvas.clientHeight;
-      for (let i = state.enemies.length - 1; i >= 0; i--) {
-        const e = state.enemies[i];
-        updateEnemy(e, dt, timeSec, player);
-        if (e.y - (e.r || 0) > H + 40 || !(Number.isFinite(e.x) && Number.isFinite(e.y))) {
-          state.enemies.splice(i, 1);
-          continue;
-        }
-        if (state.running) {
-          if (collideCircleCircle(player.x, player.y, state.finger.r * 0.9, e.x, e.y, e.r)) {
-            endRun('hit'); break;
-          }
-        }
-      }
-
-      for (let i = state.obstacles.length - 1; i >= 0; i--) {
-        const ob = state.obstacles[i];
-        updateObstacle(ob, dt, timeSec);
+      for (let i = state.entities.length - 1; i >= 0; i--) {
+        const it = state.entities[i];
+        updateEntity(it, dt, timeSec, player);
+        let off = false;
+        if (it.kind === 'enemy') off = (it.y - (it.r || 0) > H + 40);
+        else { const h = it.h || (it.r || 20) * 2; off = (it.y - h/2 > H + 40); }
+        if (off || !Number.isFinite(it.x) || !Number.isFinite(it.y)) { state.entities.splice(i, 1); continue; }
         if (!state.running) continue;
-        const active = ob.type === 'trap_zone' ? isTrapActive(ob, timeSec) : true;
-        if (!active) continue;
-        if (ob.type === 'moving_wall') {
-          if (collideCircleRect(player.x, player.y, state.finger.r * 0.9, ob.x, ob.y, ob.w, ob.h)) { endRun('hit'); break; }
-        } else if (ob.type === 'rotating_blade') {
-          const bx = ob.pivot_x + Math.cos(ob.angle) * ob.radius;
-          const by = ob.pivot_y + Math.sin(ob.angle) * ob.radius;
-          if (collideCircleCircle(player.x, player.y, state.finger.r * 0.9, bx, by, ob.blade_r)) { endRun('hit'); break; }
-        } else if (ob.type === 'trap_zone') {
-          if (collideCircleRect(player.x, player.y, state.finger.r * 0.9, ob.x, ob.y, ob.w, ob.h)) { endRun('hit'); break; }
-        } else if (ob.type === 'spike') {
-          if (collideCircleCircle(player.x, player.y, state.finger.r * 0.9, ob.x, ob.y, ob.r)) { endRun('hit'); break; }
+        let hit = false;
+        if (it.kind === 'enemy') {
+          hit = collideCircleCircle(player.x, player.y, state.finger.r * 0.9, it.x, it.y, it.r || 16);
+        } else if (it.type === 'moving_wall') {
+          hit = collideCircleRect(player.x, player.y, state.finger.r * 0.9, it.x, it.y, it.w, it.h);
+        } else if (it.type === 'rotating_blade') {
+          const bx = (it.pivot_x || it.x) + Math.cos(it.angle || 0) * (it.radius || 60);
+          const by = (it.pivot_y || it.y) + Math.sin(it.angle || 0) * (it.radius || 60);
+          hit = collideCircleCircle(player.x, player.y, state.finger.r * 0.9, bx, by, it.blade_r || 16);
+        } else if (it.type === 'trap_zone') {
+          const active = isTrapActive(it, timeSec);
+          if (active) hit = collideCircleRect(player.x, player.y, state.finger.r * 0.9, it.x, it.y, it.w, it.h);
+        } else if (it.type === 'spike_block') {
+          hit = collideCircleRect(player.x, player.y, state.finger.r * 0.9, it.x, it.y, it.w, it.h);
         }
+        if (hit) { endRun('hit'); break; }
       }
     }
 
