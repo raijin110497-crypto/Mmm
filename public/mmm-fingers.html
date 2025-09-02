@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover" />
+  <title>MMM Fingers - Vanilla</title>
+  <meta name="theme-color" content="#111" />
+  <style>
+    :root {
+      --bg: #0f1115;
+      --fg: #f5f7fb;
+      --muted: #9aa4b2;
+      --accent: #6be675;
+      --danger: #ff4d4f;
+      --warning: #ffcc00;
+      --shadow: rgba(0,0,0,.45);
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      background: radial-gradient(1200px 800px at 50% 0%, #141824 0%, var(--bg) 60%);
+      color: var(--fg);
+      font: 400 16px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      overscroll-behavior: none;
+      touch-action: none;
+    }
+
+    /* Layout */
+    .game-root { position: fixed; inset: 0; display: grid; grid-template-rows: 1fr; }
+    .game-canvas { width: 100%; height: 100%; display: block; touch-action: none; }
+
+    /* HUD */
+    .hud { position: fixed; inset: env(safe-area-inset-top) 0 auto 0; display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; pointer-events: none; }
+    .scorebox { display: inline-flex; gap: 10px; align-items: center; background: rgba(0,0,0,.25); padding: 8px 12px; border-radius: 999px; box-shadow: 0 6px 16px var(--shadow) inset, 0 2px 10px var(--shadow); backdrop-filter: blur(6px); }
+    .score { font-weight: 700; letter-spacing: .5px; }
+    .hi { color: var(--muted); font-size: 14px; }
+
+    /* Overlay */
+    .overlay { position: fixed; inset: 0; display: grid; place-items: center; padding: 24px; background: radial-gradient(1200px 800px at 50% 0%, rgba(20,24,36,.85), rgba(15,17,21,.9)); }
+    .panel { width: min(520px, 92vw); background: rgba(0,0,0,.35); border: 1px solid rgba(255,255,255,.06); border-radius: 16px; box-shadow: 0 10px 30px var(--shadow); padding: 20px; text-align: center; backdrop-filter: blur(8px); }
+    .title { font-size: 28px; margin: 6px 0 2px; font-weight: 800; letter-spacing: .3px; }
+    .subtitle { margin: 0 0 12px; color: var(--muted); }
+    .pill-list { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 12px 0 18px; }
+    .pill { font-size: 13px; color: #111; background: #e6f7e8; border: 1px solid #c8f0ce; border-radius: 999px; padding: 6px 10px; }
+    .btn-row { display: flex; gap: 12px; justify-content: center; }
+    .btn { appearance: none; border: none; border-radius: 12px; padding: 12px 16px; font-weight: 700; letter-spacing: .3px; cursor: pointer; box-shadow: 0 10px 20px var(--shadow), inset 0 -2px 0 rgba(0,0,0,.25); }
+    .btn-primary { background: linear-gradient(180deg, #6be675, #3bcf59); color: #0b220f; }
+    .btn-ghost { background: rgba(255,255,255,.08); color: var(--fg); border: 1px solid rgba(255,255,255,.12); }
+
+    /* Toasts */
+    .toast-stack { position: fixed; right: 14px; bottom: calc(14px + env(safe-area-inset-bottom)); display: grid; gap: 8px; z-index: 2; }
+    .toast { background: rgba(0,0,0,.6); color: var(--fg); border: 1px solid rgba(255,255,255,.08); padding: 10px 12px; border-radius: 12px; box-shadow: 0 8px 18px var(--shadow); animation: pop .22s ease-out; }
+
+    @keyframes pop { from { transform: translateY(8px) scale(.98); opacity: 0; } to { transform: translateY(0) scale(1); opacity: 1; } }
+
+    /* Helper badges */
+    .finger-badge { position: fixed; inset: auto 50% calc(20px + env(safe-area-inset-bottom)) auto; transform: translateX(50%); color: var(--muted); font-size: 13px; text-align: center; opacity: .8; pointer-events: none; }
+
+    /* Responsive small text tweaks */
+    @media (max-width: 360px) { .title { font-size: 24px; } .pill { font-size: 12px; } }
+  </style>
+</head>
+<body>
+  <div class="game-root">
+    <canvas class="game-canvas" id="game"></canvas>
+  </div>
+
+  <div class="hud" id="hud">
+    <div class="scorebox">
+      <span class="score" id="score">0.00s</span>
+      <span class="hi" id="hi">Best: 0.00s</span>
+    </div>
+  </div>
+
+  <div class="overlay" id="startOverlay" aria-hidden="false">
+    <div class="panel">
+      <div class="title">MMM Fingers</div>
+      <p class="subtitle">Touch & hold to survive. Don't lift or hit the teeth.</p>
+      <div class="pill-list">
+        <span class="pill">One-touch control</span>
+        <span class="pill">Endless survival</span>
+        <span class="pill">Local highscores</span>
+        <span class="pill">Lightweight</span>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="tapToStart">Touch & Hold to Start</button>
+        <button class="btn btn-ghost" id="howToPlay">How to play</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" id="gameOverOverlay" aria-hidden="true" style="display:none">
+    <div class="panel">
+      <div class="title">Chomp! Game Over</div>
+      <p class="subtitle" id="finalScore">You survived 0.00s</p>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="retryBtn">Hold to Retry</button>
+        <button class="btn btn-ghost" id="shareBtn">Share</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-stack" id="toasts" aria-live="polite" aria-atomic="true"></div>
+  <div class="finger-badge">Touch & hold anywhere</div>
+
+  <script>
+  (function() {
+    'use strict';
+
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    let dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+
+    const hudScore = document.getElementById('score');
+    const hudHi = document.getElementById('hi');
+    const startOverlay = document.getElementById('startOverlay');
+    const gameOverOverlay = document.getElementById('gameOverOverlay');
+    const finalScore = document.getElementById('finalScore');
+    const tapToStart = document.getElementById('tapToStart');
+    const howToPlay = document.getElementById('howToPlay');
+    const retryBtn = document.getElementById('retryBtn');
+    const shareBtn = document.getElementById('shareBtn');
+    const toasts = document.getElementById('toasts');
+
+    const store = {
+      get(key, fallback) {
+        try { const v = JSON.parse(localStorage.getItem(key)); return v ?? fallback; } catch { return fallback; }
+      },
+      set(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} }
+    };
+
+    const state = {
+      running: false,
+      dead: false,
+      startTime: 0,
+      elapsed: 0,
+      best: store.get('mmm.best', 0),
+      achievements: store.get('mmm.ach', {}),
+      finger: { x: 0, y: 0, r: 24, alive: false, trailX: 0, trailY: 0 },
+      hazards: [],
+      lastSpawn: 0,
+      spawnInterval: 650,
+      speed: 120,
+      scrollY: 0,
+      lastFrame: 0,
+      touchActive: false
+    };
+
+    function resize() {
+      const { clientWidth: w, clientHeight: h } = canvas;
+      dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+      canvas.width = Math.floor(w * dpr);
+      canvas.height = Math.floor(h * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    function fitCanvas() { canvas.style.width = '100%'; canvas.style.height = '100%'; resize(); }
+    window.addEventListener('resize', resize);
+    fitCanvas();
+
+    function show(el) { el.style.display = 'grid'; el.setAttribute('aria-hidden', 'false'); }
+    function hide(el) { el.style.display = 'none'; el.setAttribute('aria-hidden', 'true'); }
+
+    function setHUD() {
+      hudScore.textContent = state.elapsed.toFixed(2) + 's';
+      hudHi.textContent = 'Best: ' + state.best.toFixed(2) + 's';
+    }
+
+    function toast(msg) {
+      const div = document.createElement('div');
+      div.className = 'toast';
+      div.textContent = msg;
+      toasts.appendChild(div);
+      setTimeout(() => { div.style.opacity = '0'; div.style.transform = 'translateY(8px)'; }, 1600);
+      setTimeout(() => div.remove(), 2200);
+    }
+
+    function unlock(name, label) {
+      if (state.achievements[name]) return;
+      state.achievements[name] = true;
+      store.set('mmm.ach', state.achievements);
+      toast('Achievement unlocked: ' + label + ' 🎉');
+    }
+
+    function resetGame() {
+      state.hazards.length = 0;
+      state.lastSpawn = 0;
+      state.scrollY = 0;
+      state.speed = 120;
+      state.spawnInterval = 650;
+      state.elapsed = 0;
+      state.dead = false;
+      state.running = false;
+      state.finger.alive = false;
+      state.lastFrame = performance.now();
+      setHUD();
+    }
+
+    function startRun() {
+      resetGame();
+      hide(startOverlay);
+      hide(gameOverOverlay);
+      state.running = true;
+      state.startTime = performance.now();
+      state.finger.alive = true;
+    }
+
+    function endRun(reason) {
+      if (state.dead) return;
+      state.dead = true;
+      state.running = false;
+      state.best = Math.max(state.best, state.elapsed);
+      store.set('mmm.best', state.best);
+      finalScore.textContent = 'You survived ' + state.elapsed.toFixed(2) + 's';
+      show(gameOverOverlay);
+      setHUD();
+      if (reason === 'lift') toast('Don\'t lift your finger!');
+      if (state.elapsed >= 5) unlock('s5', '5 Seconds');
+      if (state.elapsed >= 10) unlock('s10', '10 Seconds');
+      if (state.elapsed >= 20) unlock('s20', '20 Seconds');
+    }
+
+    function spawnHazard(t) {
+      const w = canvas.clientWidth, h = canvas.clientHeight;
+      const radius = 14 + Math.random() * 18;
+      const x = 30 + Math.random() * (w - 60);
+      const y = -radius - 20;
+      const speed = (state.speed * (0.9 + Math.random()*0.2));
+      const rotSpeed = (Math.random() * 1.5 - 0.75);
+      const spikes = 8 + Math.floor(Math.random() * 5);
+      state.hazards.push({ x, y, r: radius, vy: speed, angle: 0, rotSpeed, spikes });
+      state.lastSpawn = t;
+      // Difficulty ramp
+      state.speed = Math.min(380, state.speed + 0.6);
+      state.spawnInterval = Math.max(280, state.spawnInterval - 3);
+    }
+
+    function drawBackground(dt) {
+      const w = canvas.clientWidth, h = canvas.clientHeight;
+      state.scrollY += (state.speed * 0.15) * (dt/1000);
+      const grid = 48;
+      ctx.save();
+      ctx.translate(0, -state.scrollY % grid);
+      ctx.globalAlpha = 0.25;
+      ctx.strokeStyle = '#202534';
+      ctx.lineWidth = 1;
+      for (let y = -grid; y < h + grid; y += grid) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+      }
+      ctx.globalAlpha = 0.12;
+      for (let x = 0; x < w; x += grid) {
+        ctx.beginPath(); ctx.moveTo(x, -grid); ctx.lineTo(x, h + grid); ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    function drawHazard(hz, dt) {
+      hz.y += hz.vy * (dt/1000);
+      hz.angle += hz.rotSpeed * (dt/1000);
+
+      // Draw jagged circle (teethy monster)
+      const spikes = hz.spikes;
+      const inner = hz.r * 0.65;
+      const outer = hz.r;
+      ctx.save();
+      ctx.translate(hz.x, hz.y);
+      ctx.rotate(hz.angle);
+      ctx.beginPath();
+      for (let i = 0; i < spikes * 2; i++) {
+        const rad = (i % 2 === 0) ? outer : inner;
+        const a = (i / (spikes * 2)) * Math.PI * 2;
+        const px = Math.cos(a) * rad;
+        const py = Math.sin(a) * rad;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      const grad = ctx.createRadialGradient(0,0, inner*0.2, 0,0, outer);
+      grad.addColorStop(0, '#2aef5c');
+      grad.addColorStop(1, '#1e9a45');
+      ctx.fillStyle = grad;
+      ctx.strokeStyle = 'rgba(0,0,0,.35)';
+      ctx.lineWidth = 2;
+      ctx.fill();
+      ctx.stroke();
+
+      // Eye
+      ctx.beginPath();
+      ctx.fillStyle = '#10131a';
+      ctx.arc(0, 0, inner*0.35, 0, Math.PI*2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.fillStyle = '#f2f5ff';
+      ctx.arc(inner*0.12, -inner*0.08, inner*0.14, 0, Math.PI*2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function drawFinger(dt) {
+      const f = state.finger;
+      const ease = 1 - Math.pow(0.001, dt/16.67); // exponential ease to smooth toward touch
+      f.trailX += (f.x - f.trailX) * ease;
+      f.trailY += (f.y - f.trailY) * ease;
+
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,.35)';
+      ctx.shadowBlur = 16;
+      const grad = ctx.createRadialGradient(f.trailX - f.r*0.25, f.trailY - f.r*0.25, f.r*0.25, f.trailX, f.trailY, f.r);
+      grad.addColorStop(0, '#ffeeaa');
+      grad.addColorStop(1, '#ff8f2e');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(f.trailX, f.trailY, f.r, 0, Math.PI*2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(0,0,0,.25)';
+      ctx.stroke();
+    }
+
+    function collide(a, b) {
+      const dx = (a.trailX ?? a.x) - b.x;
+      const dy = (a.trailY ?? a.y) - b.y;
+      const r = (a.r) + (b.r * 0.88);
+      return dx*dx + dy*dy <= r*r;
+    }
+
+    function step(t) {
+      const now = t;
+      const dt = Math.min(34, now - (state.lastFrame || now));
+      state.lastFrame = now;
+
+      ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+      drawBackground(dt);
+
+      // Spawn hazards
+      if (state.running && now - state.lastSpawn > state.spawnInterval) spawnHazard(now);
+
+      // Update hazards
+      for (let i = state.hazards.length - 1; i >= 0; i--) {
+        const h = state.hazards[i];
+        drawHazard(h, dt);
+        if (h.y - h.r > canvas.clientHeight + 40) state.hazards.splice(i,1);
+      }
+
+      // Draw finger if alive
+      if (state.finger.alive) drawFinger(dt);
+
+      // Collisions
+      if (state.running) {
+        for (let i = 0; i < state.hazards.length; i++) {
+          if (collide(state.finger, state.hazards[i])) { endRun('hit'); break; }
+        }
+      }
+
+      // Score
+      if (state.running) {
+        state.elapsed = (now - state.startTime) / 1000;
+        setHUD();
+      }
+
+      requestAnimationFrame(step);
+    }
+
+    requestAnimationFrame(step);
+
+    function updateFingerFromEvent(ev) {
+      const rect = canvas.getBoundingClientRect();
+      const t = (ev.touches && ev.touches[0]) || ev.changedTouches && ev.changedTouches[0] || ev;
+      const x = (t.clientX - rect.left);
+      const y = (t.clientY - rect.top);
+      state.finger.x = x;
+      state.finger.y = y;
+      if (!state.finger.trailX && !state.finger.trailY) { state.finger.trailX = x; state.finger.trailY = y; }
+    }
+
+    // Input handlers
+    function onPress(ev) {
+      ev.preventDefault();
+      state.touchActive = true;
+      updateFingerFromEvent(ev);
+      if (!state.running && !state.dead) startRun();
+      if (state.dead) { resetGame(); startRun(); }
+    }
+    function onMove(ev) {
+      ev.preventDefault();
+      if (!state.touchActive) return;
+      updateFingerFromEvent(ev);
+    }
+    function onRelease(ev) {
+      ev.preventDefault();
+      state.touchActive = false;
+      if (state.running) endRun('lift');
+    }
+
+    // Mouse + Touch support
+    canvas.addEventListener('touchstart', onPress, { passive: false });
+    canvas.addEventListener('touchmove', onMove, { passive: false });
+    canvas.addEventListener('touchend', onRelease, { passive: false });
+    canvas.addEventListener('touchcancel', onRelease, { passive: false });
+
+    canvas.addEventListener('mousedown', onPress);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onRelease);
+
+    // Buttons
+    tapToStart.addEventListener('click', () => { hide(startOverlay); toast('Touch & hold to play'); });
+    howToPlay.addEventListener('click', () => {
+      toast('Hold your finger on the screen and avoid the teeth!');
+    });
+    retryBtn.addEventListener('click', () => { hide(gameOverOverlay); toast('Hold to start'); });
+    shareBtn.addEventListener('click', async () => {
+      const text = 'I survived ' + state.best.toFixed(2) + 's in MMM Fingers!';
+      try {
+        if (navigator.share) await navigator.share({ text, title: 'MMM Fingers' });
+        else {
+          await navigator.clipboard.writeText(text);
+          toast('Copied to clipboard');
+        }
+      } catch {}
+    });
+
+    // Init UI
+    setHUD();
+    if (state.best > 0) toast('Best: ' + state.best.toFixed(2) + 's');
+  })();
+  </script>
+</body>
+</html>
